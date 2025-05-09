@@ -2,6 +2,7 @@ package com.pasadita.api.security.filter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pasadita.api.entities.Employee;
+import com.pasadita.api.security.TokenJwtConfig;
 import io.jsonwebtoken.Jwts;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -14,6 +15,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import java.io.IOException;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -22,9 +24,11 @@ import static com.pasadita.api.security.TokenJwtConfig.*;
 public class JwtAuthenticationFilter extends UsernamePasswordAuthenticationFilter {
 
     private final AuthenticationManager authenticationManager;
+    private final TokenJwtConfig tokenJwtConfig;
 
-    public JwtAuthenticationFilter(AuthenticationManager authenticationManager) {
+    public JwtAuthenticationFilter(AuthenticationManager authenticationManager, TokenJwtConfig tokenJwtConfig) {
         this.authenticationManager = authenticationManager;
+        this.tokenJwtConfig = tokenJwtConfig;
         setFilterProcessesUrl("/login");
     }
 
@@ -47,19 +51,28 @@ public class JwtAuthenticationFilter extends UsernamePasswordAuthenticationFilte
 
     @Override
     protected void successfulAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain chain, Authentication authResult) throws IOException, ServletException {
-        String token = Jwts.builder().subject(authResult.getName()).claim("authorities", authResult.getAuthorities())
-                .signWith(SECRET_KEY).compact();
+        Date expirationDate = tokenJwtConfig.getExpirationDate();
+
+        String token = Jwts.builder()
+                .subject(authResult.getName())
+                .claim("authorities", authResult.getAuthorities())
+                .issuedAt(new Date())
+                .expiration(expirationDate)
+                .signWith(tokenJwtConfig.getSecretKey())
+                .compact();
         response.addHeader(HEADER_AUTHORIZATION, PREFIX_TOKEN + token);
 
-        Map<String, String> body = new HashMap<>();
+        Map<String, Object> body = new HashMap<>();
         body.put("token", token);
         body.put("username", authResult.getName());
-        body.put("authorities", authResult.getAuthorities().toString());
+        body.put("authorities", authResult.getAuthorities());
         body.put("message", "Login successful");
+        body.put("expiresAt", expirationDate.getTime());
 
         response.getWriter().write(new ObjectMapper().writeValueAsString(body));
         response.setStatus(HttpServletResponse.SC_OK);
-        response.setContentType(CONTENT_TYPE);
+        response.setContentType(TokenJwtConfig.CONTENT_TYPE);
+
     }
 
     @Override
@@ -72,4 +85,5 @@ public class JwtAuthenticationFilter extends UsernamePasswordAuthenticationFilte
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType(CONTENT_TYPE);
     }
+
 }

@@ -2,6 +2,7 @@ package com.pasadita.api.security.filter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pasadita.api.security.SimpleGrantedAuthorityJsonCreator;
+import com.pasadita.api.security.TokenJwtConfig;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
@@ -27,9 +28,11 @@ import static com.pasadita.api.security.TokenJwtConfig.*;
 public class JwtValidationFilter extends BasicAuthenticationFilter {
 
     private final ObjectMapper objectMapper;
+    private final TokenJwtConfig tokenConfig;
 
-    public JwtValidationFilter(AuthenticationManager authenticationManager) {
+    public JwtValidationFilter(AuthenticationManager authenticationManager, TokenJwtConfig tokenConfig) {
         super(authenticationManager);
+        this.tokenConfig = tokenConfig;
         this.objectMapper = new ObjectMapper().addMixIn(SimpleGrantedAuthority.class, SimpleGrantedAuthorityJsonCreator.class);
     }
 
@@ -45,7 +48,7 @@ public class JwtValidationFilter extends BasicAuthenticationFilter {
         String token = header.replace(PREFIX_TOKEN, "");
 
         try {
-            Claims claims = Jwts.parser().verifyWith(SECRET_KEY).build().parseSignedClaims(token).getPayload();
+            Claims claims = Jwts.parser().verifyWith(tokenConfig.getSecretKey()).build().parseSignedClaims(token).getPayload();
             String username = claims.getSubject();
 
             Collection<? extends GrantedAuthority> authorities;

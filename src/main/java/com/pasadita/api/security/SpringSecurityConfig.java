@@ -27,6 +27,9 @@ public class SpringSecurityConfig {
     @Autowired
     private CorsConfigurationSource corsConfigurationSource;
 
+    @Autowired
+    private TokenJwtConfig tokenConfig;
+
     @Bean
     AuthenticationManager authenticationManager() throws Exception {
         return authenticationConfiguration.getAuthenticationManager();
@@ -39,11 +42,13 @@ public class SpringSecurityConfig {
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        return http.cors(cors -> cors.configurationSource(corsConfigurationSource))
-                .authorizeHttpRequests((auth) -> auth.requestMatchers(HttpMethod.OPTIONS,
-                        "/**").permitAll().anyRequest().authenticated()
-                ).addFilter(new JwtAuthenticationFilter(authenticationManager()))
-                .addFilter(new JwtValidationFilter(authenticationManager()))
+        return http.cors(cors ->
+                        cors.configurationSource(corsConfigurationSource))
+                .authorizeHttpRequests((auth) ->
+                        auth.requestMatchers(HttpMethod.OPTIONS,
+                                "/**").permitAll().anyRequest().authenticated()
+                ).addFilter(new JwtAuthenticationFilter(authenticationManager(), tokenConfig))
+                .addFilter(new JwtValidationFilter(authenticationManager(), tokenConfig))
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(management ->
                         management.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
