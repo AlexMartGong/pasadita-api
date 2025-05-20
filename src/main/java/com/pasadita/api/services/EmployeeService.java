@@ -13,4 +13,8 @@ public interface EmployeeService {
 
     boolean existsByUsername(String username);
 
+    void deleteById(Long id);
+
+    boolean existsById(Long id);
+
 }

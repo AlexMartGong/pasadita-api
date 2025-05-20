@@ -34,6 +34,16 @@ public class EmployeeController {
         return ResponseEntity.ok(employeeService.save(employee));
     }
 
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @DeleteMapping("/delete/{id}")
+    public ResponseEntity<?> deleteEmployee(@PathVariable Long id) {
+        if (!employeeService.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        employeeService.deleteById(id);
+        return ResponseEntity.ok().build();
+    }
+
     private ResponseEntity<?> validation(BindingResult result) {
         Map<String, String> errors = new HashMap<>();
         result.getFieldErrors().forEach(err -> {

@@ -37,4 +37,17 @@ public class EmployeeServiceImpl implements EmployeeService {
     public boolean existsByUsername(String username) {
         return employeeRepository.existsByUsername(username);
     }
+
+    @Override
+    @Transactional
+    public void deleteById(Long id) {
+        employeeRepository.deleteById(id);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean existsById(Long id) {
+        return employeeRepository.existsById(id);
+    }
+
 }
