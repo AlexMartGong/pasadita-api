@@ -26,12 +26,34 @@ public class EmployeeController {
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getEmployeeId(@PathVariable Long id) {
+        return employeeService.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @PostMapping("/save")
     public ResponseEntity<?> saveEmployee(@Valid @RequestBody Employee employee, BindingResult result) {
         if (result.hasErrors()) {
             return validation(result);
         }
         return ResponseEntity.ok(employeeService.save(employee));
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateEmployee(@PathVariable Long id, @Valid @RequestBody Employee employee, BindingResult result) {
+        if (result.hasErrors()) {
+            return validation(result);
+        }
+        if (!employeeService.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        return employeeService.update(id, employee)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
@@ -42,6 +64,14 @@ public class EmployeeController {
         }
         employeeService.deleteById(id);
         return ResponseEntity.ok().build();
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @GetMapping("/search")
+    public ResponseEntity<?> searchEmployee(@RequestParam String username) {
+        return employeeService.findByUsername(username)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     private ResponseEntity<?> validation(BindingResult result) {

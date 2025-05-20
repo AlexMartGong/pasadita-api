@@ -26,10 +26,36 @@ public class EmployeeServiceImpl implements EmployeeService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Optional<Employee> findById(Long id) {
+        return employeeRepository.findById(id);
+    }
+
+    @Override
     @Transactional
     public Optional<Employee> save(Employee employee) {
         employee.setPassword(passwordEncoder.encode(employee.getPassword()));
         return Optional.of(employeeRepository.save(employee));
+    }
+
+    @Override
+    @Transactional
+    public Optional<Employee> update(Long id, Employee employee) {
+        return employeeRepository.findById(id)
+                .map(existingEmployee -> {
+                    existingEmployee.setFullName(employee.getFullName());
+                    existingEmployee.setUsername(employee.getUsername());
+                    existingEmployee.setPosition(employee.getPosition());
+                    existingEmployee.setPhone(employee.getPhone());
+                    existingEmployee.setActive(employee.isActive());
+
+                    if (employee.getPassword() != null && !employee.getPassword().isEmpty()) {
+                        existingEmployee.setPassword(passwordEncoder.encode(employee.getPassword()));
+                    }
+
+                    return Optional.of(employeeRepository.save(existingEmployee));
+                })
+                .orElse(Optional.empty());
     }
 
     @Override
@@ -48,6 +74,12 @@ public class EmployeeServiceImpl implements EmployeeService {
     @Transactional(readOnly = true)
     public boolean existsById(Long id) {
         return employeeRepository.existsById(id);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Employee> findByUsername(String username) {
+        return employeeRepository.findByUsername(username);
     }
 
 }

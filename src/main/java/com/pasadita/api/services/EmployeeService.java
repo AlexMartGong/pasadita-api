@@ -9,7 +9,11 @@ public interface EmployeeService {
 
     List<Employee> findAll();
 
+    Optional<Employee> findById(Long id);
+
     Optional<Employee> save(Employee employee);
+
+    Optional<Employee> update(Long id, Employee employee);
 
     boolean existsByUsername(String username);
 
@@ -17,4 +21,5 @@ public interface EmployeeService {
 
     boolean existsById(Long id);
 
+    Optional<Employee> findByUsername(String username);
 }
