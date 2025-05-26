@@ -73,13 +73,29 @@ public class EmployeeServiceImpl implements EmployeeService {
     @Override
     @Transactional(readOnly = true)
     public boolean existsById(Long id) {
-        return employeeRepository.existsById(id);
+        return !employeeRepository.existsById(id);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<Employee> findByUsername(String username) {
         return employeeRepository.findByUsername(username);
+    }
+
+    @Override
+    @Transactional
+    public Optional<Employee> changePassword(Long id, Employee employee) {
+
+        if (employee.getPassword() == null || employee.getPassword().isEmpty()) {
+            return Optional.empty();
+        }
+
+        return employeeRepository.findById(id)
+                .map(existingEmployee -> {
+                    existingEmployee.setPassword(passwordEncoder.encode(employee.getPassword()));
+                    return Optional.of(employeeRepository.save(existingEmployee));
+                })
+                .orElse(Optional.empty());
     }
 
 }

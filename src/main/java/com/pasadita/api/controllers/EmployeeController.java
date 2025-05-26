@@ -48,7 +48,7 @@ public class EmployeeController {
         if (result.hasErrors()) {
             return validation(result);
         }
-        if (!employeeService.existsById(id)) {
+        if (employeeService.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
         return employeeService.update(id, employee)
@@ -59,7 +59,7 @@ public class EmployeeController {
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @DeleteMapping("/delete/{id}")
     public ResponseEntity<?> deleteEmployee(@PathVariable Long id) {
-        if (!employeeService.existsById(id)) {
+        if (employeeService.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
         employeeService.deleteById(id);
@@ -80,6 +80,20 @@ public class EmployeeController {
             errors.put(err.getField(), "El campo: " + err.getField() + " " + err.getDefaultMessage());
         });
         return ResponseEntity.badRequest().body(errors);
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PutMapping("/change-password/{id}")
+    public ResponseEntity<?> changePassword(@PathVariable Long id, @RequestBody Employee employee) {
+        if (employee.getPassword() == null || employee.getPassword().trim().isEmpty()) {
+            return ResponseEntity.badRequest().body("La contraseña no puede estar vacía");
+        }
+        if (employeeService.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        return employeeService.changePassword(id, employee)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
 }

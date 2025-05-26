@@ -22,4 +22,7 @@ public interface EmployeeService {
     boolean existsById(Long id);
 
     Optional<Employee> findByUsername(String username);
+
+    Optional<Employee> changePassword(Long id, Employee employee);
+
 }
