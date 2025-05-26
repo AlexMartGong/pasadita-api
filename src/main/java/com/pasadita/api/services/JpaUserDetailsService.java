@@ -1,6 +1,7 @@
 package com.pasadita.api.services;
 
 import com.pasadita.api.entities.Employee;
+import com.pasadita.api.exceptions.EmployeeInactiveException;
 import com.pasadita.api.repositories.EmployeeRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -31,6 +32,10 @@ public class JpaUserDetailsService implements UserDetailsService {
         }
 
         Employee employee = employeeOptional.get();
+
+        if (!employee.isActive()) {
+            throw new EmployeeInactiveException("Usuario inactivo");
+        }
 
         List<SimpleGrantedAuthority> authorities = Collections.singletonList(
                 new SimpleGrantedAuthority(employee.getPosition().name())
