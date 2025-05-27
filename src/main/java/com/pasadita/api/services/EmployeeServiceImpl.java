@@ -98,4 +98,15 @@ public class EmployeeServiceImpl implements EmployeeService {
                 .orElse(Optional.empty());
     }
 
+    @Override
+    @Transactional
+    public Optional<Employee> changeStatus(Long id, Employee employee) {
+        return employeeRepository.findById(id)
+                .map(existingEmployee -> {
+                    existingEmployee.setActive(employee.isActive());
+                    return Optional.of(employeeRepository.save(existingEmployee));
+                })
+                .orElse(Optional.empty());
+    }
+
 }

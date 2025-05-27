@@ -74,14 +74,6 @@ public class EmployeeController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    private ResponseEntity<?> validation(BindingResult result) {
-        Map<String, String> errors = new HashMap<>();
-        result.getFieldErrors().forEach(err -> {
-            errors.put(err.getField(), "El campo: " + err.getField() + " " + err.getDefaultMessage());
-        });
-        return ResponseEntity.badRequest().body(errors);
-    }
-
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @PutMapping("/change-password/{id}")
     public ResponseEntity<?> changePassword(@PathVariable Long id, @RequestBody Employee employee) {
@@ -94,6 +86,25 @@ public class EmployeeController {
         return employeeService.changePassword(id, employee)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PutMapping("/change-status/{id}")
+    public ResponseEntity<?> changeStatus(@PathVariable Long id, @RequestBody Employee employee) {
+        if (employeeService.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        return employeeService.changeStatus(id, employee)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    private ResponseEntity<?> validation(BindingResult result) {
+        Map<String, String> errors = new HashMap<>();
+        result.getFieldErrors().forEach(err -> {
+            errors.put(err.getField(), "El campo: " + err.getField() + " " + err.getDefaultMessage());
+        });
+        return ResponseEntity.badRequest().body(errors);
     }
 
 }

@@ -25,4 +25,6 @@ public interface EmployeeService {
 
     Optional<Employee> changePassword(Long id, Employee employee);
 
+    Optional<Employee> changeStatus(Long id, Employee employee);
+
 }
