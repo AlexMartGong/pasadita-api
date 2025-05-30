@@ -8,7 +8,6 @@ public class PasaditaApiApplication {
 
     public static void main(String[] args) {
         SpringApplication.run(PasaditaApiApplication.class, args);
-        System.out.println("Hello World");
     }
 
 }
