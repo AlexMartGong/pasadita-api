@@ -73,7 +73,7 @@ public class EmployeeServiceImpl implements EmployeeService {
     @Override
     @Transactional(readOnly = true)
     public boolean existsById(Long id) {
-        return !employeeRepository.existsById(id);
+        return employeeRepository.existsById(id);
     }
 
     @Override
