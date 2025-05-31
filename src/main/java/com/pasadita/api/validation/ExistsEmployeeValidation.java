@@ -24,6 +24,11 @@ public class ExistsEmployeeValidation implements ConstraintValidator<ExistsEmplo
         if (employeeService == null) {
             return true;
         }
+
+        if (s == null || s.trim().isEmpty()) {
+            return true;
+        }
+
         return !employeeService.existsByUsername(s);
     }
 }

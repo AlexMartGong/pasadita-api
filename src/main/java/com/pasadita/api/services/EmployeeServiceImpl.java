@@ -53,9 +53,8 @@ public class EmployeeServiceImpl implements EmployeeService {
                         existingEmployee.setPassword(passwordEncoder.encode(employee.getPassword()));
                     }
 
-                    return Optional.of(employeeRepository.save(existingEmployee));
-                })
-                .orElse(Optional.empty());
+                    return employeeRepository.save(existingEmployee);
+                });
     }
 
     @Override
@@ -104,9 +103,8 @@ public class EmployeeServiceImpl implements EmployeeService {
         return employeeRepository.findById(id)
                 .map(existingEmployee -> {
                     existingEmployee.setActive(employee.isActive());
-                    return Optional.of(employeeRepository.save(existingEmployee));
-                })
-                .orElse(Optional.empty());
+                    return employeeRepository.save(existingEmployee);
+                });
     }
 
 }
