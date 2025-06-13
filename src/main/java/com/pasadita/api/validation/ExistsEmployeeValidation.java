@@ -1,6 +1,6 @@
 package com.pasadita.api.validation;
 
-import com.pasadita.api.services.EmployeeService;
+import com.pasadita.api.services.employee.EmployeeService;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 import org.springframework.beans.factory.annotation.Autowired;

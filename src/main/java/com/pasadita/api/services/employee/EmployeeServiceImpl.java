@@ -1,4 +1,4 @@
-package com.pasadita.api.services;
+package com.pasadita.api.services.employee;
 
 import com.pasadita.api.entities.Employee;
 import com.pasadita.api.repositories.EmployeeRepository;

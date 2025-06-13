@@ -1,7 +1,7 @@
 package com.pasadita.api.entities;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.pasadita.api.enums.Position;
+import com.pasadita.api.enums.user.Position;
 import com.pasadita.api.validation.ExistsEmployee;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
