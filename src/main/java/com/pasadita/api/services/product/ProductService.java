@@ -16,7 +16,7 @@ public interface ProductService {
 
     Optional<Product> update(Long id, Product product);
 
-    Optional<Product> changeStatus(Long id, Product product);
+    Optional<Product> changeStatus(Long id, boolean status);
 
     void updatePriceById(Long id, BigDecimal price);
 

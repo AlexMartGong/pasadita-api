@@ -56,10 +56,10 @@ public class ProductServiceImpl implements ProductService {
 
     @Transactional
     @Override
-    public Optional<Product> changeStatus(Long id, Product product) {
+    public Optional<Product> changeStatus(Long id, boolean status) {
         return productRepository.findById(id)
                 .map(existingProduct -> {
-                    existingProduct.setActive(product.isActive());
+                    existingProduct.setActive(status);
                     return productRepository.save(existingProduct);
                 });
     }

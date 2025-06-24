@@ -59,14 +59,11 @@ public class EmployeeController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateEmployee(@PathVariable Long id,
-                                            @RequestBody Employee employee,
-                                            BindingResult result) {
+    public ResponseEntity<?> updateEmployee(@PathVariable Long id, @RequestBody Employee employee, BindingResult result) {
         if (!employeeService.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
 
-        // Para actualización, el username podría ya existir si es el mismo empleado
         if (employee.getUsername() != null) {
             employeeService.findByUsername(employee.getUsername())
                     .ifPresent(existingEmployee -> {

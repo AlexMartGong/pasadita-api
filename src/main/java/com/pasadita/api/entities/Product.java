@@ -7,6 +7,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
+import java.math.BigDecimal;
+
 @Data
 @Builder
 @Entity
@@ -30,10 +32,11 @@ public class Product {
     private String name;
 
     @Column(name = "unit_price")
-    @NotBlank
-    private Double price;
+    @NotNull
+    private BigDecimal price;
 
     @Column(name = "unit_measure")
+    @Enumerated(EnumType.STRING)
     @NotNull
     private UnitMeasure unitMeasure;
 
