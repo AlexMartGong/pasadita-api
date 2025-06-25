@@ -48,12 +48,12 @@ public class ProductController {
 
         try {
             Product savedProduct = productService.save(product)
-                    .orElseThrow(() -> new RuntimeException("Error al guardar el producto"));
+                    .orElseThrow(() -> new RuntimeException("Error saving the product"));
 
             return ResponseEntity.status(201).body(savedProduct);
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
-            error.put("error", "Error al guardar el producto: " + e.getMessage());
+            error.put("error", "Error saving the product: " + e.getMessage());
             return ResponseEntity.status(500).body(error);
         }
     }
@@ -67,12 +67,12 @@ public class ProductController {
 
         try {
             Product updatedProduct = productService.update(id, product)
-                    .orElseThrow(() -> new RuntimeException("Error al actualizar el producto"));
+                    .orElseThrow(() -> new RuntimeException("Error updating the product"));
 
             return ResponseEntity.ok(updatedProduct);
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
-            error.put("error", "Error al actualizar el producto: " + e.getMessage());
+            error.put("error", "Error updating the product: " + e.getMessage());
             return ResponseEntity.status(500).body(error);
         }
     }
@@ -83,24 +83,24 @@ public class ProductController {
 
         if (productService.findById(id).isEmpty()) {
             Map<String, String> error = new HashMap<>();
-            error.put("error", "Producto no encontrado");
+            error.put("error", "Product not found");
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
         }
 
         if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
             Map<String, String> error = new HashMap<>();
-            error.put("error", "El precio debe ser un valor positivo");
+            error.put("error", "The price must be greater than 0");
             return ResponseEntity.badRequest().body(error);
         }
 
         try {
             productService.updatePriceById(id, price);
             Map<String, String> response = new HashMap<>();
-            response.put("message", "Precio actualizado correctamente");
+            response.put("message", "The product price has been updated successfully");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
-            error.put("error", "Error al actualizar el precio del producto: " + e.getMessage());
+            error.put("error", "Error updating the product: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
@@ -110,20 +110,20 @@ public class ProductController {
     public ResponseEntity<?> changeProductStatus(@PathVariable Long id, @RequestBody boolean status) {
         if (productService.findById(id).isEmpty()) {
             Map<String, String> error = new HashMap<>();
-            error.put("error", "Producto no encontrado");
+            error.put("error", "Product not found");
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
         }
 
         try {
             productService.changeStatus(id, status)
-                    .orElseThrow(() -> new RuntimeException("Error al cambiar el estado del producto"));
+                    .orElseThrow(() -> new RuntimeException("Error changing the product status"));
 
             Map<String, String> response = new HashMap<>();
-            response.put("message", "Estado del producto actualizado correctamente");
+            response.put("message", "The product status has been changed successfully");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
-            error.put("error", "Error al cambiar el estado del producto: " + e.getMessage());
+            error.put("error", "Error changing the product status: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
 

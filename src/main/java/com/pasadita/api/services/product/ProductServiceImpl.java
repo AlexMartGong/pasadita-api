@@ -31,6 +31,7 @@ public class ProductServiceImpl implements ProductService {
     @Transactional
     @Override
     public Optional<Product> save(Product product) {
+        product.setActive(true);
         return Optional.of(productRepository.save(product));
     }
 
@@ -43,7 +44,6 @@ public class ProductServiceImpl implements ProductService {
                     existingProduct.setPrice(product.getPrice());
                     existingProduct.setCategory(product.getCategory());
                     existingProduct.setUnitMeasure(product.getUnitMeasure());
-                    existingProduct.setActive(product.isActive());
                     return productRepository.save(existingProduct);
                 });
     }
