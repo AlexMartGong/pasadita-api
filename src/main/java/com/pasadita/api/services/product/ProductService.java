@@ -20,4 +20,6 @@ public interface ProductService {
 
     void updatePriceById(Long id, BigDecimal price);
 
+    List<Product> findByActiveTrue();
+
 }

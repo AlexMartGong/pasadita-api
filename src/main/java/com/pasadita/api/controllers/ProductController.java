@@ -32,6 +32,13 @@ public class ProductController {
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
+    @GetMapping("/active")
+    public ResponseEntity<List<Product>> getActiveProducts() {
+        List<Product> activeProducts = productService.findByActiveTrue();
+        return ResponseEntity.ok(activeProducts);
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/{id}")
     public ResponseEntity<Product> getProductById(@PathVariable Long id) {
         return productService.findById(id)
