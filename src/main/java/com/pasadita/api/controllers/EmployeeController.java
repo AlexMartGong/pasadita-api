@@ -1,6 +1,6 @@
 package com.pasadita.api.controllers;
 
-import com.pasadita.api.entities.Employee;
+import com.pasadita.api.dto.employee.*;
 import com.pasadita.api.services.employee.EmployeeService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,14 +25,14 @@ public class EmployeeController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @GetMapping("/all")
-    public ResponseEntity<List<Employee>> getAllEmployees() {
-        List<Employee> employees = employeeService.findAll();
+    public ResponseEntity<List<EmployeeResponseDto>> getAllEmployees() {
+        List<EmployeeResponseDto> employees = employeeService.findAll();
         return ResponseEntity.ok(employees);
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @GetMapping("/{id}")
-    public ResponseEntity<Employee> getEmployeeById(@PathVariable Long id) {
+    public ResponseEntity<EmployeeResponseDto> getEmployeeById(@PathVariable Long id) {
         return employeeService.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -40,13 +40,13 @@ public class EmployeeController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @PostMapping("/save")
-    public ResponseEntity<?> saveEmployee(@Valid @RequestBody Employee employee, BindingResult result) {
+    public ResponseEntity<?> saveEmployee(@Valid @RequestBody EmployeeCreateDto employeeDto, BindingResult result) {
         if (result.hasErrors()) {
             return ResponseEntity.badRequest().body(getValidationErrors(result));
         }
 
         try {
-            Employee savedEmployee = employeeService.save(employee)
+            EmployeeResponseDto savedEmployee = employeeService.save(employeeDto)
                     .orElseThrow(() -> new RuntimeException("Error al guardar el empleado"));
 
             return ResponseEntity.status(HttpStatus.CREATED).body(savedEmployee);
@@ -59,13 +59,13 @@ public class EmployeeController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateEmployee(@PathVariable Long id, @RequestBody Employee employee, BindingResult result) {
+    public ResponseEntity<?> updateEmployee(@PathVariable Long id, @Valid @RequestBody EmployeeUpdateDto employeeDto, BindingResult result) {
         if (!employeeService.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
 
-        if (employee.getUsername() != null) {
-            employeeService.findByUsername(employee.getUsername())
+        if (employeeDto.getUsername() != null) {
+            employeeService.findByUsername(employeeDto.getUsername())
                     .ifPresent(existingEmployee -> {
                         if (!existingEmployee.getId().equals(id)) {
                             result.rejectValue("username", "exists", "El usuario ya existe");
@@ -77,7 +77,7 @@ public class EmployeeController {
             return ResponseEntity.badRequest().body(getValidationErrors(result));
         }
 
-        return employeeService.update(id, employee)
+        return employeeService.update(id, employeeDto)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -103,7 +103,7 @@ public class EmployeeController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @GetMapping("/search")
-    public ResponseEntity<Employee> searchEmployee(@RequestParam String username) {
+    public ResponseEntity<EmployeeResponseDto> searchEmployee(@RequestParam String username) {
         return employeeService.findByUsername(username)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -111,24 +111,16 @@ public class EmployeeController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @PutMapping("/change-password/{id}")
-    public ResponseEntity<?> changePassword(@PathVariable Long id, @RequestBody Employee employee) {
-        if (employee.getPassword() == null || employee.getPassword().trim().isEmpty()) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "La contraseña no puede estar vacía");
-            return ResponseEntity.badRequest().body(error);
-        }
-
-        if (employee.getPassword().length() < 6) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "La contraseña debe tener al menos 6 caracteres");
-            return ResponseEntity.badRequest().body(error);
+    public ResponseEntity<?> changePassword(@PathVariable Long id, @Valid @RequestBody EmployeeChangePasswordDto passwordDto, BindingResult result) {
+        if (result.hasErrors()) {
+            return ResponseEntity.badRequest().body(getValidationErrors(result));
         }
 
         if (!employeeService.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
 
-        return employeeService.changePassword(id, employee)
+        return employeeService.changePassword(id, passwordDto)
                 .map(updatedEmployee -> {
                     Map<String, String> response = new HashMap<>();
                     response.put("message", "Contraseña actualizada correctamente");
@@ -139,12 +131,12 @@ public class EmployeeController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @PutMapping("/change-status/{id}")
-    public ResponseEntity<?> changeStatus(@PathVariable Long id, @RequestBody Employee employee) {
+    public ResponseEntity<?> changeStatus(@PathVariable Long id, @RequestBody EmployeeChangeStatusDto statusDto) {
         if (!employeeService.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
 
-        return employeeService.changeStatus(id, employee)
+        return employeeService.changeStatus(id, statusDto)
                 .map(updatedEmployee -> {
                     Map<String, Object> response = new HashMap<>();
                     response.put("message", "Estado actualizado correctamente");

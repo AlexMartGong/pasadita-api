@@ -1,19 +1,19 @@
 package com.pasadita.api.services.employee;
 
-import com.pasadita.api.entities.Employee;
+import com.pasadita.api.dto.employee.*;
 
 import java.util.List;
 import java.util.Optional;
 
 public interface EmployeeService {
 
-    List<Employee> findAll();
+    List<EmployeeResponseDto> findAll();
 
-    Optional<Employee> findById(Long id);
+    Optional<EmployeeResponseDto> findById(Long id);
 
-    Optional<Employee> save(Employee employee);
+    Optional<EmployeeResponseDto> save(EmployeeCreateDto employeeDto);
 
-    Optional<Employee> update(Long id, Employee employee);
+    Optional<EmployeeResponseDto> update(Long id, EmployeeUpdateDto employeeDto);
 
     boolean existsByUsername(String username);
 
@@ -21,10 +21,10 @@ public interface EmployeeService {
 
     boolean existsById(Long id);
 
-    Optional<Employee> findByUsername(String username);
+    Optional<EmployeeResponseDto> findByUsername(String username);
 
-    Optional<Employee> changePassword(Long id, Employee employee);
+    Optional<EmployeeResponseDto> changePassword(Long id, EmployeeChangePasswordDto passwordDto);
 
-    Optional<Employee> changeStatus(Long id, Employee employee);
+    Optional<EmployeeResponseDto> changeStatus(Long id, EmployeeChangeStatusDto statusDto);
 
 }

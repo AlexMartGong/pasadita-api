@@ -1,5 +1,6 @@
 package com.pasadita.api.services.employee;
 
+import com.pasadita.api.dto.employee.*;
 import com.pasadita.api.entities.Employee;
 import com.pasadita.api.repositories.EmployeeRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class EmployeeServiceImpl implements EmployeeService {
@@ -19,41 +21,42 @@ public class EmployeeServiceImpl implements EmployeeService {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private EmployeeMapper employeeMapper;
+
     @Override
     @Transactional(readOnly = true)
-    public List<Employee> findAll() {
-        return (List<Employee>) employeeRepository.findAll();
+    public List<EmployeeResponseDto> findAll() {
+        return ((List<Employee>) employeeRepository.findAll())
+                .stream()
+                .map(employeeMapper::toResponseDto)
+                .collect(Collectors.toList());
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Optional<Employee> findById(Long id) {
-        return employeeRepository.findById(id);
+    public Optional<EmployeeResponseDto> findById(Long id) {
+        return employeeRepository.findById(id)
+                .map(employeeMapper::toResponseDto);
     }
 
     @Override
     @Transactional
-    public Optional<Employee> save(Employee employee) {
+    public Optional<EmployeeResponseDto> save(EmployeeCreateDto employeeDto) {
+        Employee employee = employeeMapper.toEntity(employeeDto);
         employee.setPassword(passwordEncoder.encode(employee.getPassword()));
-        return Optional.of(employeeRepository.save(employee));
+        Employee savedEmployee = employeeRepository.save(employee);
+        return Optional.of(employeeMapper.toResponseDto(savedEmployee));
     }
 
     @Override
     @Transactional
-    public Optional<Employee> update(Long id, Employee employee) {
+    public Optional<EmployeeResponseDto> update(Long id, EmployeeUpdateDto employeeDto) {
         return employeeRepository.findById(id)
                 .map(existingEmployee -> {
-                    existingEmployee.setFullName(employee.getFullName());
-                    existingEmployee.setUsername(employee.getUsername());
-                    existingEmployee.setPosition(employee.getPosition());
-                    existingEmployee.setPhone(employee.getPhone());
-                    existingEmployee.setActive(employee.isActive());
-
-                    if (employee.getPassword() != null && !employee.getPassword().isEmpty()) {
-                        existingEmployee.setPassword(passwordEncoder.encode(employee.getPassword()));
-                    }
-
-                    return employeeRepository.save(existingEmployee);
+                    employeeMapper.updateEntityFromDto(existingEmployee, employeeDto);
+                    Employee savedEmployee = employeeRepository.save(existingEmployee);
+                    return employeeMapper.toResponseDto(savedEmployee);
                 });
     }
 
@@ -77,33 +80,34 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     @Override
     @Transactional(readOnly = true)
-    public Optional<Employee> findByUsername(String username) {
-        return employeeRepository.findByUsername(username);
+    public Optional<EmployeeResponseDto> findByUsername(String username) {
+        return employeeRepository.findByUsername(username)
+                .map(employeeMapper::toResponseDto);
     }
 
     @Override
     @Transactional
-    public Optional<Employee> changePassword(Long id, Employee employee) {
-
-        if (employee.getPassword() == null || employee.getPassword().isEmpty()) {
+    public Optional<EmployeeResponseDto> changePassword(Long id, EmployeeChangePasswordDto passwordDto) {
+        if (passwordDto.getPassword() == null || passwordDto.getPassword().isEmpty()) {
             return Optional.empty();
         }
 
         return employeeRepository.findById(id)
                 .map(existingEmployee -> {
-                    existingEmployee.setPassword(passwordEncoder.encode(employee.getPassword()));
-                    return Optional.of(employeeRepository.save(existingEmployee));
-                })
-                .orElse(Optional.empty());
+                    existingEmployee.setPassword(passwordEncoder.encode(passwordDto.getPassword()));
+                    Employee savedEmployee = employeeRepository.save(existingEmployee);
+                    return employeeMapper.toResponseDto(savedEmployee);
+                });
     }
 
     @Override
     @Transactional
-    public Optional<Employee> changeStatus(Long id, Employee employee) {
+    public Optional<EmployeeResponseDto> changeStatus(Long id, EmployeeChangeStatusDto statusDto) {
         return employeeRepository.findById(id)
                 .map(existingEmployee -> {
-                    existingEmployee.setActive(employee.isActive());
-                    return employeeRepository.save(existingEmployee);
+                    existingEmployee.setActive(statusDto.isActive());
+                    Employee savedEmployee = employeeRepository.save(existingEmployee);
+                    return employeeMapper.toResponseDto(savedEmployee);
                 });
     }
 
