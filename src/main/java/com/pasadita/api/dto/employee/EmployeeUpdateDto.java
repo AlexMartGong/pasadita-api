@@ -21,7 +21,6 @@ public class EmployeeUpdateDto {
     @Pattern(regexp = "^[a-zA-ZÀ-ÿ\\s]+$", message = "El nombre completo solo puede contener letras y espacios")
     private String fullName;
 
-    @ExistsEmployee
     @NotBlank(message = "El nombre de usuario es obligatorio")
     @Size(min = 4, max = 50, message = "El nombre de usuario debe tener entre 4 y 50 caracteres")
     @Pattern(regexp = "^[a-zA-Z0-9._-]+$",
