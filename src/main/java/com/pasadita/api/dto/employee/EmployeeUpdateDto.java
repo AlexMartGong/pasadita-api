@@ -13,18 +13,18 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class EmployeeUpdateDto {
-
+    
     @NotBlank(message = "El nombre completo es obligatorio")
     private String fullName;
-
+    
     @NotBlank(message = "El nombre de usuario es obligatorio")
     private String username;
-
+    
     @NotNull(message = "La posición es obligatoria")
     private Position position;
-
+    
     @NotBlank(message = "El teléfono es obligatorio")
     private String phone;
-
+    
     private boolean active;
 }

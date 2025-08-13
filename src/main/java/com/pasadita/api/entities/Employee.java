@@ -24,24 +24,18 @@ public class Employee {
     private Long id;
 
     @Column(name = "full_name")
-    @NotBlank
     private String fullName;
 
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
-    @NotBlank
     private String password;
 
     @ExistsEmployee
-    @NotBlank
     private String username;
 
     @Enumerated(EnumType.STRING)
-    @NotNull
     private Position position;
 
-    @NotBlank
     private String phone;
-
     private boolean active;
 
 }
