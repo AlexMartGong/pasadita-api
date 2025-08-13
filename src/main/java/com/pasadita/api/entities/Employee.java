@@ -4,8 +4,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.pasadita.api.enums.user.Position;
 import com.pasadita.api.validation.ExistsEmployee;
 import jakarta.persistence.*;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
 @Data
@@ -17,7 +15,6 @@ import lombok.*;
 @Entity
 @Table(name = "employees")
 public class Employee {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "employee_id")
@@ -37,5 +34,4 @@ public class Employee {
 
     private String phone;
     private boolean active;
-
 }

@@ -12,8 +12,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class EmployeeChangePasswordDto {
-    
+
     @NotBlank(message = "La contraseña es obligatoria")
-    @Size(min = 6, message = "La contraseña debe tener al menos 6 caracteres")
+    @Size(min = 8,max = 50, message = "La contraseña debe tener entre 8 y 50 caracteres")
     private String password;
 }

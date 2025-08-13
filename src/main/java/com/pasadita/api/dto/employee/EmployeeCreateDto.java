@@ -16,7 +16,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class EmployeeCreateDto {
-
     @NotBlank(message = "El nombre completo es obligatorio")
     @Size(min = 5, max = 150, message = "El nombre completo debe tener entre 5 y 150 caracteres")
     @Pattern(regexp = "^[a-zA-ZÀ-ÿ\\s]+$", message = "El nombre completo solo puede contener letras y espacios")
@@ -29,7 +28,8 @@ public class EmployeeCreateDto {
     @ExistsEmployee
     @NotBlank(message = "El nombre de usuario es obligatorio")
     @Size(min = 4, max = 50, message = "El nombre de usuario debe tener entre 4 y 50 caracteres")
-    @Pattern(regexp = "^[a-zA-Z0-9._-]+$", message = "El nombre de usuario solo puede contener letras, números, puntos, guiones bajos y guiones")
+    @Pattern(regexp = "^[a-zA-Z0-9._-]+$",
+            message = "El nombre de usuario solo puede contener letras, números, puntos, guiones bajos y guiones")
     private String username;
 
     @NotNull(message = "La posición es obligatoria")
@@ -40,5 +40,6 @@ public class EmployeeCreateDto {
     @Pattern(regexp = "^[0-9]+$", message = "El teléfono solo puede contener números")
     private String phone;
 
+    @NotNull(message = "El estado activo es obligatorio")
     private boolean active = true;
 }
