@@ -1,7 +1,6 @@
 package com.pasadita.api.dto.employee;
 
 import com.pasadita.api.enums.user.Position;
-import com.pasadita.api.validation.ExistsEmployee;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
