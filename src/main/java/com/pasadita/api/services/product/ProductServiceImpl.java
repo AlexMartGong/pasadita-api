@@ -1,5 +1,7 @@
 package com.pasadita.api.services.product;
 
+import com.pasadita.api.dto.product.ProductMapper;
+import com.pasadita.api.dto.product.ProductResponseDto;
 import com.pasadita.api.entities.Product;
 import com.pasadita.api.repositories.ProductRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class ProductServiceImpl implements ProductService {
@@ -16,10 +19,16 @@ public class ProductServiceImpl implements ProductService {
     @Autowired
     private ProductRepository productRepository;
 
+    @Autowired
+    private ProductMapper productMapper;
+
     @Transactional(readOnly = true)
     @Override
-    public List<Product> findAll() {
-        return (List<Product>) productRepository.findAll();
+    public List<ProductResponseDto> findAll() {
+        return ((List<Product>) productRepository.findAll())
+                .stream()
+                .map(productMapper::toResponseDto)
+                .collect(Collectors.toList());
     }
 
     @Override

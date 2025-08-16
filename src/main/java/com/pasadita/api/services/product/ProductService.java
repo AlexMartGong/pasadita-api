@@ -1,5 +1,6 @@
 package com.pasadita.api.services.product;
 
+import com.pasadita.api.dto.product.ProductResponseDto;
 import com.pasadita.api.entities.Product;
 
 import java.math.BigDecimal;
@@ -8,7 +9,7 @@ import java.util.Optional;
 
 public interface ProductService {
 
-    List<Product> findAll();
+    List<ProductResponseDto> findAll();
 
     Optional<Product> findById(Long id);
 

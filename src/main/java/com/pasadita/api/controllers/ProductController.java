@@ -1,5 +1,6 @@
 package com.pasadita.api.controllers;
 
+import com.pasadita.api.dto.product.ProductResponseDto;
 import com.pasadita.api.entities.Product;
 import com.pasadita.api.services.product.ProductService;
 import jakarta.validation.Valid;
@@ -25,8 +26,8 @@ public class ProductController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @GetMapping("/all")
-    public ResponseEntity<List<Product>> getAllProducts() {
-        List<Product> products = productService.findAll();
+    public ResponseEntity<List<ProductResponseDto>> getAllProducts() {
+        List<ProductResponseDto> products = productService.findAll();
         return ResponseEntity.ok(products);
     }
 

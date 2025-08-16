@@ -3,7 +3,6 @@ package com.pasadita.api.entities;
 import com.pasadita.api.enums.product.Category;
 import com.pasadita.api.enums.product.UnitMeasure;
 import jakarta.persistence.*;
-import jakarta.validation.constraints.*;
 import lombok.*;
 
 import java.math.BigDecimal;
