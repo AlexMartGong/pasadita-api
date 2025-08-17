@@ -1,5 +1,6 @@
 package com.pasadita.api.controllers;
 
+import com.pasadita.api.dto.product.ProductCreateDto;
 import com.pasadita.api.dto.product.ProductResponseDto;
 import com.pasadita.api.entities.Product;
 import com.pasadita.api.services.product.ProductService;
@@ -48,20 +49,20 @@ public class ProductController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @PostMapping("/save")
-    public ResponseEntity<?> saveProduct(@Valid @RequestBody Product product, BindingResult result) {
+    public ResponseEntity<?> saveProduct(@Valid @RequestBody ProductCreateDto productDto, BindingResult result) {
         if (result.hasErrors()) {
             return ResponseEntity.badRequest().body(getValidationErrors(result));
         }
 
         try {
-            Product savedProduct = productService.save(product)
+            ProductResponseDto savedProduct = productService.save(productDto)
                     .orElseThrow(() -> new RuntimeException("Error saving the product"));
 
-            return ResponseEntity.status(201).body(savedProduct);
+            return ResponseEntity.status(HttpStatus.CREATED).body(savedProduct);
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
             error.put("error", "Error saving the product: " + e.getMessage());
-            return ResponseEntity.status(500).body(error);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
 

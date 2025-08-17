@@ -15,4 +15,14 @@ public class ProductMapper {
                 .active(product.isActive())
                 .build();
     }
+
+    public Product toEntity(ProductCreateDto dto) {
+        return Product.builder()
+                .name(dto.getName())
+                .category(dto.getCategory())
+                .price(dto.getPrice())
+                .unitMeasure(dto.getUnitMeasure())
+                .active(dto.isActive())
+                .build();
+    }
 }

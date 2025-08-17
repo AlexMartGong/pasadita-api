@@ -1,5 +1,6 @@
 package com.pasadita.api.services.product;
 
+import com.pasadita.api.dto.product.ProductCreateDto;
 import com.pasadita.api.dto.product.ProductMapper;
 import com.pasadita.api.dto.product.ProductResponseDto;
 import com.pasadita.api.entities.Product;
@@ -45,9 +46,10 @@ public class ProductServiceImpl implements ProductService {
 
     @Transactional
     @Override
-    public Optional<Product> save(Product product) {
-        product.setActive(true);
-        return Optional.of(productRepository.save(product));
+    public Optional<ProductResponseDto> save(ProductCreateDto productDto) {
+        Product product = productMapper.toEntity(productDto);
+        Product savedProduct = productRepository.save(product);
+        return Optional.of(productMapper.toResponseDto(savedProduct));
     }
 
     @Transactional

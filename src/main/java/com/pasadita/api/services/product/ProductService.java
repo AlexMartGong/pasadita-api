@@ -1,5 +1,6 @@
 package com.pasadita.api.services.product;
 
+import com.pasadita.api.dto.product.ProductCreateDto;
 import com.pasadita.api.dto.product.ProductResponseDto;
 import com.pasadita.api.entities.Product;
 
@@ -13,7 +14,7 @@ public interface ProductService {
 
     Optional<Product> findById(Long id);
 
-    Optional<Product> save(Product product);
+    Optional<ProductResponseDto> save(ProductCreateDto productDto);
 
     Optional<Product> update(Long id, Product product);
 

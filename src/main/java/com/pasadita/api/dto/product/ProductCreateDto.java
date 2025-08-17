@@ -32,5 +32,6 @@ public class ProductCreateDto {
     private UnitMeasure unitMeasure;
 
     @NotNull(message = "El estado del producto es obligatorio")
+    @AssertTrue(message = "El estado del producto debe ser verdadero o falso")
     private boolean active;
 }
