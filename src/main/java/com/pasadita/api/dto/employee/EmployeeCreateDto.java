@@ -18,7 +18,7 @@ import lombok.NoArgsConstructor;
 public class EmployeeCreateDto {
     @NotBlank(message = "El nombre completo es obligatorio")
     @Size(min = 5, max = 150, message = "El nombre completo debe tener entre 5 y 150 caracteres")
-    @Pattern(regexp = "^[a-zA-ZÀ-ÿ\\s]+$", message = "El nombre completo solo puede contener letras y espacios")
+    @Pattern(regexp = "^[a-zA-Z\\s]+$", message = "El nombre completo solo puede contener letras y espacios")
     private String fullName;
 
     @NotBlank(message = "La contraseña es obligatoria")
