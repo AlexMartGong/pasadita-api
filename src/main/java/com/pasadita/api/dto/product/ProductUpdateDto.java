@@ -14,7 +14,7 @@ import java.math.BigDecimal;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ProductCreateDto {
+public class ProductUpdateDto {
     @NotBlank(message = "El nombre del producto es obligatorio")
     @Size(min = 2, max = 100, message = "El nombre del producto debe tener entre 2 y 100 caracteres")
     @Pattern(regexp = "^[a-zA-Z0-9\\s]+$", message = "El nombre del producto solo puede contener letras, números y espacios")

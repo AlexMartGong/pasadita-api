@@ -25,4 +25,12 @@ public class ProductMapper {
                 .active(dto.isActive())
                 .build();
     }
+
+    public void updateEntityFromDto(Product product, ProductUpdateDto dto) {
+        product.setName(dto.getName());
+        product.setCategory(dto.getCategory());
+        product.setPrice(dto.getPrice());
+        product.setUnitMeasure(dto.getUnitMeasure());
+        product.setActive(dto.isActive());
+    }
 }

@@ -1,0 +1,16 @@
+package com.pasadita.api.dto.product;
+
+import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ProductChangeStatusDto {
+    @NotNull
+    private boolean active;
+}

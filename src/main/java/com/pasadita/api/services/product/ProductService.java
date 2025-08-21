@@ -1,7 +1,9 @@
 package com.pasadita.api.services.product;
 
+import com.pasadita.api.dto.product.ProductChangeStatusDto;
 import com.pasadita.api.dto.product.ProductCreateDto;
 import com.pasadita.api.dto.product.ProductResponseDto;
+import com.pasadita.api.dto.product.ProductUpdateDto;
 import com.pasadita.api.entities.Product;
 
 import java.math.BigDecimal;
@@ -16,9 +18,9 @@ public interface ProductService {
 
     Optional<ProductResponseDto> save(ProductCreateDto productDto);
 
-    Optional<Product> update(Long id, Product product);
+    Optional<ProductResponseDto> update(Long id, ProductUpdateDto productUpdateDto);
 
-    Optional<Product> changeStatus(Long id, boolean status);
+    Optional<ProductResponseDto> changeStatus(Long id, ProductChangeStatusDto productChangeStatusDto);
 
     void updatePriceById(Long id, BigDecimal price);
 

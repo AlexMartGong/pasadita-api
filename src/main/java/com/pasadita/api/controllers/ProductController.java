@@ -1,7 +1,9 @@
 package com.pasadita.api.controllers;
 
+import com.pasadita.api.dto.product.ProductChangeStatusDto;
 import com.pasadita.api.dto.product.ProductCreateDto;
 import com.pasadita.api.dto.product.ProductResponseDto;
+import com.pasadita.api.dto.product.ProductUpdateDto;
 import com.pasadita.api.entities.Product;
 import com.pasadita.api.services.product.ProductService;
 import jakarta.validation.Valid;
@@ -68,20 +70,20 @@ public class ProductController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @PutMapping("/update/{id}")
-    public ResponseEntity<?> updateProduct(@PathVariable Long id, @Valid @RequestBody Product product, BindingResult result) {
+    public ResponseEntity<?> updateProduct(@PathVariable Long id, @Valid @RequestBody ProductUpdateDto productUpdateDto, BindingResult result) {
         if (result.hasErrors()) {
             return ResponseEntity.badRequest().body(getValidationErrors(result));
         }
 
         try {
-            Product updatedProduct = productService.update(id, product)
+            ProductResponseDto updatedProduct = productService.update(id, productUpdateDto)
                     .orElseThrow(() -> new RuntimeException("Error updating the product"));
 
             return ResponseEntity.ok(updatedProduct);
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
             error.put("error", "Error updating the product: " + e.getMessage());
-            return ResponseEntity.status(500).body(error);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
 
@@ -115,7 +117,7 @@ public class ProductController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @PutMapping("/change-status/{id}")
-    public ResponseEntity<?> changeProductStatus(@PathVariable Long id, @RequestBody boolean status) {
+    public ResponseEntity<?> changeProductStatus(@PathVariable Long id, @RequestBody ProductChangeStatusDto status) {
         if (productService.findById(id).isEmpty()) {
             Map<String, String> error = new HashMap<>();
             error.put("error", "Product not found");

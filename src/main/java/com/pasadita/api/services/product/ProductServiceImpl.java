@@ -1,8 +1,6 @@
 package com.pasadita.api.services.product;
 
-import com.pasadita.api.dto.product.ProductCreateDto;
-import com.pasadita.api.dto.product.ProductMapper;
-import com.pasadita.api.dto.product.ProductResponseDto;
+import com.pasadita.api.dto.product.*;
 import com.pasadita.api.entities.Product;
 import com.pasadita.api.repositories.ProductRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,14 +52,12 @@ public class ProductServiceImpl implements ProductService {
 
     @Transactional
     @Override
-    public Optional<Product> update(Long id, Product product) {
+    public Optional<ProductResponseDto> update(Long id, ProductUpdateDto productUpdateDto) {
         return productRepository.findById(id)
                 .map(existingProduct -> {
-                    existingProduct.setName(product.getName());
-                    existingProduct.setPrice(product.getPrice());
-                    existingProduct.setCategory(product.getCategory());
-                    existingProduct.setUnitMeasure(product.getUnitMeasure());
-                    return productRepository.save(existingProduct);
+                    productMapper.updateEntityFromDto(existingProduct, productUpdateDto);
+                    Product updatedProduct = productRepository.save(existingProduct);
+                    return productMapper.toResponseDto(updatedProduct);
                 });
     }
 
@@ -73,11 +69,12 @@ public class ProductServiceImpl implements ProductService {
 
     @Transactional
     @Override
-    public Optional<Product> changeStatus(Long id, boolean status) {
+    public Optional<ProductResponseDto> changeStatus(Long id, ProductChangeStatusDto productChangeStatusDto) {
         return productRepository.findById(id)
                 .map(existingProduct -> {
-                    existingProduct.setActive(status);
-                    return productRepository.save(existingProduct);
+                    existingProduct.setActive(productChangeStatusDto.isActive());
+                    Product updatedProduct = productRepository.save(existingProduct);
+                    return productMapper.toResponseDto(updatedProduct);
                 });
     }
 }
