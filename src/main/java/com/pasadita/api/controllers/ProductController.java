@@ -4,6 +4,7 @@ import com.pasadita.api.dto.product.ProductChangeStatusDto;
 import com.pasadita.api.dto.product.ProductCreateDto;
 import com.pasadita.api.dto.product.ProductResponseDto;
 import com.pasadita.api.dto.product.ProductUpdateDto;
+import com.pasadita.api.dto.product.ProductUpdatePriceDto;
 import com.pasadita.api.entities.Product;
 import com.pasadita.api.services.product.ProductService;
 import jakarta.validation.Valid;
@@ -15,7 +16,6 @@ import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.annotation.*;
 
-import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -89,7 +89,10 @@ public class ProductController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @PutMapping("/update-price/{id}")
-    public ResponseEntity<?> updateProductPrice(@PathVariable Long id, @RequestBody BigDecimal price) {
+    public ResponseEntity<?> updateProductPrice(@PathVariable Long id, @Valid @RequestBody ProductUpdatePriceDto productUpdatePriceDto, BindingResult result) {
+        if (result.hasErrors()) {
+            return ResponseEntity.badRequest().body(getValidationErrors(result));
+        }
 
         if (productService.findById(id).isEmpty()) {
             Map<String, String> error = new HashMap<>();
@@ -97,20 +100,14 @@ public class ProductController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
         }
 
-        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "The price must be greater than 0");
-            return ResponseEntity.badRequest().body(error);
-        }
-
         try {
-            productService.updatePriceById(id, price);
+            productService.updatePriceById(id, productUpdatePriceDto);
             Map<String, String> response = new HashMap<>();
             response.put("message", "The product price has been updated successfully");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
-            error.put("error", "Error updating the product: " + e.getMessage());
+            error.put("error", "Error updating the product price: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }

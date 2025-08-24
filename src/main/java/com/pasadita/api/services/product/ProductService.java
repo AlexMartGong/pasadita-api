@@ -4,9 +4,9 @@ import com.pasadita.api.dto.product.ProductChangeStatusDto;
 import com.pasadita.api.dto.product.ProductCreateDto;
 import com.pasadita.api.dto.product.ProductResponseDto;
 import com.pasadita.api.dto.product.ProductUpdateDto;
+import com.pasadita.api.dto.product.ProductUpdatePriceDto;
 import com.pasadita.api.entities.Product;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,7 +22,7 @@ public interface ProductService {
 
     Optional<ProductResponseDto> changeStatus(Long id, ProductChangeStatusDto productChangeStatusDto);
 
-    void updatePriceById(Long id, BigDecimal price);
+    void updatePriceById(Long id, ProductUpdatePriceDto productUpdatePriceDto);
 
     List<Product> findByActiveTrue();
 

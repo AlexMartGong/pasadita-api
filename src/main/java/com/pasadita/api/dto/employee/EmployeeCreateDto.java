@@ -41,5 +41,6 @@ public class EmployeeCreateDto {
     private String phone;
 
     @NotNull(message = "El estado activo es obligatorio")
+    @Builder.Default
     private boolean active = true;
 }

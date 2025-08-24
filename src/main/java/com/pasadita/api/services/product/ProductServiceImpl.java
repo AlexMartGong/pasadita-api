@@ -7,7 +7,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -63,8 +62,8 @@ public class ProductServiceImpl implements ProductService {
 
     @Transactional
     @Override
-    public void updatePriceById(Long id, BigDecimal price) {
-        productRepository.updatePriceById(id, price);
+    public void updatePriceById(Long id, ProductUpdatePriceDto productUpdatePriceDto) {
+        productRepository.updatePriceById(id, productUpdatePriceDto.getPrice());
     }
 
     @Transactional
