@@ -2,13 +2,13 @@ package com.pasadita.api.controllers;
 
 import com.pasadita.api.dto.employee.*;
 import com.pasadita.api.services.employee.EmployeeService;
+import com.pasadita.api.utils.ValidationUtils;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.BindingResult;
-import org.springframework.validation.FieldError;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -41,7 +41,7 @@ public class EmployeeController {
     @PostMapping("/save")
     public ResponseEntity<?> saveEmployee(@Valid @RequestBody EmployeeCreateDto employeeDto, BindingResult result) {
         if (result.hasErrors()) {
-            return ResponseEntity.badRequest().body(getValidationErrors(result));
+            return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
         }
 
         try {
@@ -73,7 +73,7 @@ public class EmployeeController {
         }
 
         if (result.hasErrors()) {
-            return ResponseEntity.badRequest().body(getValidationErrors(result));
+            return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
         }
 
         return employeeService.update(id, employeeDto)
@@ -112,7 +112,7 @@ public class EmployeeController {
     @PutMapping("/change-password/{id}")
     public ResponseEntity<?> changePassword(@PathVariable Long id, @Valid @RequestBody EmployeeChangePasswordDto passwordDto, BindingResult result) {
         if (result.hasErrors()) {
-            return ResponseEntity.badRequest().body(getValidationErrors(result));
+            return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
         }
 
         if (!employeeService.existsById(id)) {
@@ -143,13 +143,5 @@ public class EmployeeController {
                     return ResponseEntity.ok(response);
                 })
                 .orElse(ResponseEntity.notFound().build());
-    }
-
-    private Map<String, String> getValidationErrors(BindingResult result) {
-        Map<String, String> errors = new HashMap<>();
-        for (FieldError error : result.getFieldErrors()) {
-            errors.put(error.getField(), error.getDefaultMessage());
-        }
-        return errors;
     }
 }
