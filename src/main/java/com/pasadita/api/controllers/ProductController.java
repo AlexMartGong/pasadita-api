@@ -5,7 +5,6 @@ import com.pasadita.api.dto.product.ProductCreateDto;
 import com.pasadita.api.dto.product.ProductResponseDto;
 import com.pasadita.api.dto.product.ProductUpdateDto;
 import com.pasadita.api.dto.product.ProductUpdatePriceDto;
-import com.pasadita.api.entities.Product;
 import com.pasadita.api.services.product.ProductService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,15 +34,8 @@ public class ProductController {
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
-    @GetMapping("/active")
-    public ResponseEntity<List<Product>> getActiveProducts() {
-        List<Product> activeProducts = productService.findByActiveTrue();
-        return ResponseEntity.ok(activeProducts);
-    }
-
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @GetMapping("/{id}")
-    public ResponseEntity<Product> getProductById(@PathVariable Long id) {
+    public ResponseEntity<ProductResponseDto> getProductById(@PathVariable Long id) {
         return productService.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
