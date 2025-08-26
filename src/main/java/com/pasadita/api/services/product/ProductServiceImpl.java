@@ -29,16 +29,11 @@ public class ProductServiceImpl implements ProductService {
                 .collect(Collectors.toList());
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public List<Product> findByActiveTrue() {
-        return productRepository.findByActiveTrue();
-    }
-
     @Transactional(readOnly = true)
     @Override
-    public Optional<Product> findById(Long id) {
-        return productRepository.findById(id);
+    public Optional<ProductResponseDto> findById(Long id) {
+        return productRepository.findById(id)
+                .map(productMapper::toResponseDto);
     }
 
     @Transactional

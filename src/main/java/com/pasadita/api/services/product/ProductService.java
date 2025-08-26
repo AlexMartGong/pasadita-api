@@ -5,7 +5,6 @@ import com.pasadita.api.dto.product.ProductCreateDto;
 import com.pasadita.api.dto.product.ProductResponseDto;
 import com.pasadita.api.dto.product.ProductUpdateDto;
 import com.pasadita.api.dto.product.ProductUpdatePriceDto;
-import com.pasadita.api.entities.Product;
 
 import java.util.List;
 import java.util.Optional;
@@ -14,7 +13,7 @@ public interface ProductService {
 
     List<ProductResponseDto> findAll();
 
-    Optional<Product> findById(Long id);
+    Optional<ProductResponseDto> findById(Long id);
 
     Optional<ProductResponseDto> save(ProductCreateDto productDto);
 
@@ -24,6 +23,5 @@ public interface ProductService {
 
     void updatePriceById(Long id, ProductUpdatePriceDto productUpdatePriceDto);
 
-    List<Product> findByActiveTrue();
 
 }

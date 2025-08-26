@@ -5,15 +5,14 @@ import com.pasadita.api.dto.product.ProductCreateDto;
 import com.pasadita.api.dto.product.ProductResponseDto;
 import com.pasadita.api.dto.product.ProductUpdateDto;
 import com.pasadita.api.dto.product.ProductUpdatePriceDto;
-import com.pasadita.api.entities.Product;
 import com.pasadita.api.services.product.ProductService;
+import com.pasadita.api.utils.ValidationUtils;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.BindingResult;
-import org.springframework.validation.FieldError;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -35,15 +34,8 @@ public class ProductController {
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
-    @GetMapping("/active")
-    public ResponseEntity<List<Product>> getActiveProducts() {
-        List<Product> activeProducts = productService.findByActiveTrue();
-        return ResponseEntity.ok(activeProducts);
-    }
-
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @GetMapping("/{id}")
-    public ResponseEntity<Product> getProductById(@PathVariable Long id) {
+    public ResponseEntity<ProductResponseDto> getProductById(@PathVariable Long id) {
         return productService.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -53,7 +45,7 @@ public class ProductController {
     @PostMapping("/save")
     public ResponseEntity<?> saveProduct(@Valid @RequestBody ProductCreateDto productDto, BindingResult result) {
         if (result.hasErrors()) {
-            return ResponseEntity.badRequest().body(getValidationErrors(result));
+            return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
         }
 
         try {
@@ -72,7 +64,7 @@ public class ProductController {
     @PutMapping("/update/{id}")
     public ResponseEntity<?> updateProduct(@PathVariable Long id, @Valid @RequestBody ProductUpdateDto productUpdateDto, BindingResult result) {
         if (result.hasErrors()) {
-            return ResponseEntity.badRequest().body(getValidationErrors(result));
+            return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
         }
 
         try {
@@ -91,7 +83,7 @@ public class ProductController {
     @PutMapping("/update-price/{id}")
     public ResponseEntity<?> updateProductPrice(@PathVariable Long id, @Valid @RequestBody ProductUpdatePriceDto productUpdatePriceDto, BindingResult result) {
         if (result.hasErrors()) {
-            return ResponseEntity.badRequest().body(getValidationErrors(result));
+            return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
         }
 
         if (productService.findById(id).isEmpty()) {
@@ -135,13 +127,4 @@ public class ProductController {
         }
 
     }
-
-    private Map<String, String> getValidationErrors(BindingResult result) {
-        Map<String, String> errors = new HashMap<>();
-        for (FieldError error : result.getFieldErrors()) {
-            errors.put(error.getField(), error.getDefaultMessage());
-        }
-        return errors;
-    }
-
 }
