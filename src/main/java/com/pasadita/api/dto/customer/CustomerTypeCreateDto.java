@@ -28,7 +28,6 @@ public class CustomerTypeCreateDto {
 
     @NotNull(message = "Discount percentage is required")
     @DecimalMin(value = "0.0", message = "Discount must be a non-negative value")
-    @Pattern(regexp = "^\\d{1,2}(\\.\\d{1,2})?$|^100(\\.0{1,2})?$",
-            message = "Discount must be between 0 and 100 with up to two decimal places")
+    @DecimalMax(value = "100.0", message = "Discount cannot exceed 100")
     private BigDecimal discount;
 }

@@ -36,17 +36,18 @@ public class CustomerCreateDto {
     @Pattern(regexp = "^[a-zA-Z\\s]+$", message = "The city can only contain letters and spaces")
     private String city;
 
+    @NotBlank(message = "The postal code is required")
     @Size(max = 10, message = "The postal code cannot exceed 10 characters")
     @Pattern(regexp = "^[a-zA-Z0-9\\s-]*$", message = "The postal code contains invalid characters")
     private String postalCode;
 
+    @NotNull(message = "The custom discount is required")
     @DecimalMin(value = "0.0", message = "The custom discount must be a non-negative value")
     @DecimalMax(value = "100.0", message = "The custom discount must be at most 100")
     @Digits(integer = 3, fraction = 2, message = "The custom discount must have up to 3 digits and 2 decimal places")
-    @Pattern(regexp = "^\\d{1,2}(\\.\\d{1,2})?$|^100(\\.0{1,2})?$",
-            message = "The custom discount must be between 0 and 100 with up to two decimal places")
     private BigDecimal customDiscount;
 
+    @NotBlank(message = "The notes are required")
     @Size(max = 500, message = "The notes cannot exceed 500 characters")
     @Pattern(regexp = "^[a-zA-Z0-9\\s.,'-]+$", message = "The notes contain invalid characters")
     private String notes;
