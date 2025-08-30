@@ -1,9 +1,6 @@
 package com.pasadita.api.dto.customer;
 
-import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,13 +18,17 @@ public class CustomerTypeUpdateDto {
 
     @NotBlank(message = "Customer type name is required")
     @Size(min = 2, max = 100, message = "Customer type name must be between 2 and 100 characters")
+    @Pattern(regexp = "^[a-zA-Z0-9\\s]+$", message = "Customer type name can only contain letters, numbers, and spaces")
     private String name;
 
     @NotBlank(message = "Description is required")
     @Size(max = 255, message = "Description cannot exceed 255 characters")
+    @Pattern(regexp = "^[a-zA-Z0-9\\s.,'-]+$", message = "Description contains invalid characters")
     private String description;
 
     @NotNull(message = "Discount percentage is required")
     @DecimalMin(value = "0.0", message = "Discount must be a non-negative value")
+    @Pattern(regexp = "^\\d{1,2}(\\.\\d{1,2})?$|^100(\\.0{1,2})?$",
+            message = "Discount must be between 0 and 100 with up to two decimal places")
     private BigDecimal discount;
 }

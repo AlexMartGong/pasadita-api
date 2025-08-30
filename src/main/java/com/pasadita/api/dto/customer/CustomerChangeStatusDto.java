@@ -11,6 +11,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CustomerChangeStatusDto {
-    @NotNull(message = "El estado es obligatorio")
+    @NotNull(message = "The active status is required")
     private Boolean active;
 }
