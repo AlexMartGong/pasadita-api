@@ -5,7 +5,7 @@ import com.pasadita.api.entities.Customer;
 import com.pasadita.api.entities.CustomerType;
 import com.pasadita.api.repositories.CustomerRepository;
 import com.pasadita.api.repositories.CustomerTypeRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,16 +14,12 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class CustomerServiceImpl implements CustomerService {
 
-    @Autowired
-    private CustomerRepository customerRepository;
-
-    @Autowired
-    private CustomerTypeRepository customerTypeRepository;
-
-    @Autowired
-    private CustomerMapper customerMapper;
+    private final CustomerRepository customerRepository;
+    private final CustomerTypeRepository customerTypeRepository;
+    private final CustomerMapper customerMapper;
 
     @Override
     @Transactional(readOnly = true)
@@ -51,16 +47,12 @@ public class CustomerServiceImpl implements CustomerService {
     @Transactional
     public Optional<CustomerResponseDto> update(Long id, CustomerUpdateDto customerUpdateDto) {
         Optional<CustomerType> customerTypeOpt = customerTypeRepository.findById(customerUpdateDto.getCustomerTypeId());
-        if (customerTypeOpt.isEmpty()) {
-            return Optional.empty();
-        }
-
-        return customerRepository.findById(id)
+        return customerTypeOpt.flatMap(customerType -> customerRepository.findById(id)
                 .map(existingCustomer -> {
-                    customerMapper.updateEntity(existingCustomer, customerUpdateDto, customerTypeOpt.get());
+                    customerMapper.updateEntity(existingCustomer, customerUpdateDto, customerType);
                     Customer savedCustomer = customerRepository.save(existingCustomer);
                     return customerMapper.toResponseDto(savedCustomer);
-                });
+                }));
     }
 
     @Override

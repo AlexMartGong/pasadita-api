@@ -21,7 +21,7 @@ public class CustomerMapper {
                 .build();
     }
 
-    public Customer updateEntity(Customer customer, CustomerUpdateDto dto, CustomerType customerType) {
+    public void updateEntity(Customer customer, CustomerUpdateDto dto, CustomerType customerType) {
         customer.setCustomerType(customerType);
         customer.setName(dto.getName());
         customer.setPhone(dto.getPhone());
@@ -30,12 +30,10 @@ public class CustomerMapper {
         customer.setPostalCode(dto.getPostalCode());
         customer.setCustom_discount(dto.getCustomDiscount());
         customer.setNotes(dto.getNotes());
-        return customer;
     }
 
-    public Customer updateStatus(Customer customer, CustomerChangeStatusDto dto) {
+    public void updateStatus(Customer customer, CustomerChangeStatusDto dto) {
         customer.setActive(dto.getActive());
-        return customer;
     }
 
     public CustomerResponseDto toResponseDto(Customer customer) {
