@@ -45,7 +45,7 @@ public class SaleCreateDto {
 
     @NotNull(message = "The paid status is required")
     @Builder.Default
-    private Boolean paid = false;
+    private Boolean paid = true;
 
     @Size(max = 500, message = "The notes cannot exceed 500 characters")
     @Pattern(regexp = "^[a-zA-Z0-9\\s.,'-]*$", message = "The notes contain invalid characters")
