@@ -48,7 +48,7 @@ public class SaleMapper {
                 .subtotal(sale.getSubtotal())
                 .discountAmount(sale.getDiscountAmount())
                 .total(sale.getTotal())
-                .paid(sale.isPaid())
+                .paid(sale.getPaid())
                 .notes(sale.getNotes())
                 .build();
     }

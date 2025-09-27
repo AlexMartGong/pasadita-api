@@ -28,8 +28,7 @@ public class Sale {
     private Employee employee;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "customer_id", referencedColumnName = "customer_id", nullable = false)
-    @NotNull(message = "Customer is required")
+    @JoinColumn(name = "customer_id", referencedColumnName = "customer_id")
     private Customer customer;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -39,32 +38,32 @@ public class Sale {
 
     @Column(nullable = false)
     @NotNull(message = "Datetime is required")
-    @PastOrPresent(message = "Datetime cannot be in the future")
-    private LocalDateTime datetime;
+    @Builder.Default
+    private LocalDateTime datetime = LocalDateTime.now();
 
-    @Column(nullable = false)
+    @Column(nullable = false, precision = 10, scale = 2)
     @NotNull(message = "Subtotal is required")
     @DecimalMin(value = "0.00", message = "Subtotal must be non-negative")
-    @Digits(integer = 12, fraction = 2, message = "Subtotal must have up to 12 digits and 2 decimal places")
+    @Digits(integer = 10, fraction = 2, message = "Subtotal must have up to 10 digits and 2 decimal places")
     private BigDecimal subtotal;
 
-    @Column(name = "discount_amount", nullable = false)
+    @Column(name = "discount_amount", nullable = false, precision = 10, scale = 2)
     @NotNull(message = "Discount amount is required")
     @DecimalMin(value = "0.00", message = "Discount amount must be non-negative")
     @Digits(integer = 10, fraction = 2, message = "Discount amount must have up to 10 digits and 2 decimal places")
     @Builder.Default
     private BigDecimal discountAmount = BigDecimal.ZERO;
 
-    @Column(nullable = false)
+    @Column(nullable = false, precision = 10, scale = 2)
     @NotNull(message = "Total is required")
     @DecimalMin(value = "0.00", message = "Total must be non-negative")
-    @Digits(integer = 12, fraction = 2, message = "Total must have up to 12 digits and 2 decimal places")
+    @Digits(integer = 10, fraction = 2, message = "Total must have up to 10 digits and 2 decimal places")
     private BigDecimal total;
 
     @Column(nullable = false)
     @NotNull(message = "Paid status is required")
     @Builder.Default
-    private Boolean paid = false;
+    private Boolean paid = true;
 
     @Size(max = 500, message = "Notes cannot exceed 500 characters")
     private String notes;
