@@ -1,5 +1,6 @@
 package com.pasadita.api.dto.sale;
 
+import com.pasadita.api.dto.saledetail.SaleDetailCreateDto;
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -8,6 +9,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -50,4 +52,7 @@ public class SaleCreateDto {
     @Size(max = 500, message = "The notes cannot exceed 500 characters")
     @Pattern(regexp = "^[a-zA-Z0-9\\s.,'-]*$", message = "The notes contain invalid characters")
     private String notes;
+
+    @NotNull(message = "The sale details are required")
+    private List<SaleDetailCreateDto> saleDetails;
 }
