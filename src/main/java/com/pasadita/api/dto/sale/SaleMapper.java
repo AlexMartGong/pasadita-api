@@ -6,6 +6,8 @@ import com.pasadita.api.entities.Customer;
 import com.pasadita.api.entities.PaymentMethod;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
+
 @Component
 public class SaleMapper {
 
@@ -14,7 +16,7 @@ public class SaleMapper {
                 .employee(employee)
                 .customer(customer)
                 .paymentMethod(paymentMethod)
-                .datetime(dto.getDatetime())
+                .datetime(LocalDateTime.now())
                 .subtotal(dto.getSubtotal())
                 .discountAmount(dto.getDiscountAmount())
                 .total(dto.getTotal())
@@ -27,7 +29,7 @@ public class SaleMapper {
         sale.setEmployee(employee);
         sale.setCustomer(customer);
         sale.setPaymentMethod(paymentMethod);
-        sale.setDatetime(dto.getDatetime());
+//        sale.setDatetime(dto.getDatetime());
         sale.setSubtotal(dto.getSubtotal());
         sale.setDiscountAmount(dto.getDiscountAmount());
         sale.setTotal(dto.getTotal());
