@@ -18,6 +18,5 @@ public class PaymentMethod {
     private Long id;
 
     private String name;
-    private String description;
     private boolean active;
 }

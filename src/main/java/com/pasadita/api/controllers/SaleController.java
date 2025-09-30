@@ -41,13 +41,15 @@ public class SaleController {
         }
 
         try {
-            SaleResponseDto savedSale = saleService.save(saleCreateDto);
-            return ResponseEntity.status(HttpStatus.CREATED).body(savedSale);
+            saleService.save(saleCreateDto);
+            return ResponseEntity.status(HttpStatus.CREATED).build();
         } catch (RuntimeException e) {
+
             Map<String, String> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", "No se pudo guardar la venta. Por favor, verifica los datos. " + e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         } catch (Exception e) {
+
             Map<String, String> error = new HashMap<>();
             error.put("error", "Error saving the sale");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
