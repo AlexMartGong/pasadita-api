@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -39,7 +40,7 @@ public class SaleServiceImpl implements SaleService {
     }
 
     @Override
-    public SaleResponseDto save(SaleCreateDto saleCreateDto) {
+    public Optional<SaleResponseDto> save(SaleCreateDto saleCreateDto) {
         Employee employee = findEmployeeById(saleCreateDto.getEmployeeId());
         Customer customer = findCustomerById(saleCreateDto.getCustomerId());
         PaymentMethod paymentMethod = findPaymentMethodById(saleCreateDto.getPaymentMethodId());
@@ -52,11 +53,11 @@ public class SaleServiceImpl implements SaleService {
             saleDetailService.save(saleDetailDto);
         });
 
-        return saleMapper.toResponseDto(savedSale);
+        return Optional.ofNullable(saleMapper.toResponseDto(savedSale));
     }
 
     @Override
-    public SaleResponseDto update(Long id, SaleUpdateDto saleUpdateDto) {
+    public Optional<SaleResponseDto> update(Long id, SaleUpdateDto saleUpdateDto) {
         Sale existingSale = saleRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Sale not found with id: " + id));
 
@@ -67,7 +68,7 @@ public class SaleServiceImpl implements SaleService {
         saleMapper.updateEntity(existingSale, saleUpdateDto, employee, customer, paymentMethod);
         Sale updatedSale = saleRepository.save(existingSale);
 
-        return saleMapper.toResponseDto(updatedSale);
+        return Optional.ofNullable(saleMapper.toResponseDto(updatedSale));
     }
 
     private Employee findEmployeeById(Long employeeId) {

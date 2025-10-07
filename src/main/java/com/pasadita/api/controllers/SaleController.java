@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/sales")
@@ -41,8 +42,9 @@ public class SaleController {
         }
 
         try {
-            saleService.save(saleCreateDto);
-            return ResponseEntity.status(HttpStatus.CREATED).build();
+            SaleResponseDto responseDto = saleService.save(saleCreateDto)
+                    .orElseThrow(() -> new RuntimeException("No se pudo guardar la venta"));
+            return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
         } catch (RuntimeException e) {
 
             Map<String, String> error = new HashMap<>();
@@ -64,7 +66,7 @@ public class SaleController {
         }
 
         try {
-            SaleResponseDto updatedSale = saleService.update(id, saleUpdateDto);
+            Optional<SaleResponseDto> updatedSale = saleService.update(id, saleUpdateDto);
             return ResponseEntity.ok(updatedSale);
         } catch (RuntimeException e) {
             Map<String, String> error = new HashMap<>();
