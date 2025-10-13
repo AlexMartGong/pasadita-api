@@ -1,6 +1,5 @@
 package com.pasadita.api.dto.deliveryorder;
 
-import com.pasadita.api.enums.delivery.DeliveryStatus;
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -19,9 +18,6 @@ public class DeliveryOrderCreateDto {
 
     @NotNull(message = "The delivery employee ID is required")
     private Long deliveryEmployeeId;
-
-    @NotNull(message = "The status is required")
-    private DeliveryStatus status;
 
     @NotBlank(message = "The delivery address is required")
     @Size(max = 200, message = "The delivery address cannot exceed 200 characters")

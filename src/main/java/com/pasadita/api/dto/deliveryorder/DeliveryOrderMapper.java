@@ -3,6 +3,7 @@ package com.pasadita.api.dto.deliveryorder;
 import com.pasadita.api.entities.DeliveryOrder;
 import com.pasadita.api.entities.Employee;
 import com.pasadita.api.entities.Sale;
+import com.pasadita.api.enums.delivery.DeliveryStatus;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -14,7 +15,7 @@ public class DeliveryOrderMapper {
         return DeliveryOrder.builder()
                 .sale(sale)
                 .deliveryEmployee(deliveryEmployee)
-                .status(dto.getStatus())
+                .status(DeliveryStatus.PENDIENTE)
                 .requestDate(LocalDateTime.now())
                 .deliveryAddress(dto.getDeliveryAddress())
                 .contactPhone(dto.getContactPhone())
