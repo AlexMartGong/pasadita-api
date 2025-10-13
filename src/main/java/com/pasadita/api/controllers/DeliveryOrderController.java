@@ -1,5 +1,6 @@
 package com.pasadita.api.controllers;
 
+import com.pasadita.api.dto.deliveryorder.DeliveryOrderChangeStatusDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderCreateDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderResponseDto;
 import com.pasadita.api.services.deliveryorder.DeliveryOrderService;
@@ -50,6 +51,28 @@ public class DeliveryOrderController {
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
             error.put("error", "Error saving the delivery order");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PatchMapping("/change-status/{id}")
+    public ResponseEntity<?> changeStatus(@PathVariable Long id, @Valid @RequestBody DeliveryOrderChangeStatusDto deliveryOrderChangeStatusDto, BindingResult result) {
+        if (result.hasErrors()) {
+            return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
+        }
+
+        try {
+            DeliveryOrderResponseDto responseDto = deliveryOrderService.changeStatus(id, deliveryOrderChangeStatusDto)
+                    .orElseThrow(() -> new RuntimeException("No se pudo cambiar el estado de la orden de entrega"));
+            return ResponseEntity.ok(responseDto);
+        } catch (RuntimeException e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "No se pudo cambiar el estado de la orden de entrega. " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "Error changing the delivery order status");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }

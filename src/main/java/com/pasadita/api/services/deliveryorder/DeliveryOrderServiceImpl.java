@@ -1,5 +1,6 @@
 package com.pasadita.api.services.deliveryorder;
 
+import com.pasadita.api.dto.deliveryorder.DeliveryOrderChangeStatusDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderCreateDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderMapper;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderResponseDto;
@@ -45,6 +46,17 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
         DeliveryOrder savedDeliveryOrder = deliveryOrderRepository.save(deliveryOrder);
 
         return Optional.ofNullable(deliveryOrderMapper.toResponseDto(savedDeliveryOrder));
+    }
+
+    @Override
+    public Optional<DeliveryOrderResponseDto> changeStatus(Long id, DeliveryOrderChangeStatusDto deliveryOrderChangeStatusDto) {
+        DeliveryOrder deliveryOrder = deliveryOrderRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Delivery order not found with id: " + id));
+
+        deliveryOrder.setStatus(deliveryOrderChangeStatusDto.getStatus());
+        DeliveryOrder updatedDeliveryOrder = deliveryOrderRepository.save(deliveryOrder);
+
+        return Optional.ofNullable(deliveryOrderMapper.toResponseDto(updatedDeliveryOrder));
     }
 
     private Sale findSaleById(Long saleId) {

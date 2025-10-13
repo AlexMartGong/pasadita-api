@@ -64,3 +64,4 @@ package-lock.json
 README.md
 settings.local.json
 tsconfig.json
+/mcp-server
