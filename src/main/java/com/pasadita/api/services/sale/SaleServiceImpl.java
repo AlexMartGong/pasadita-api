@@ -4,11 +4,13 @@ import com.pasadita.api.dto.sale.SaleCreateDto;
 import com.pasadita.api.dto.sale.SaleMapper;
 import com.pasadita.api.dto.sale.SaleResponseDto;
 import com.pasadita.api.dto.sale.SaleUpdateDto;
+import com.pasadita.api.dto.saledetail.SaleDetailResponseDto;
 import com.pasadita.api.entities.*;
 import com.pasadita.api.repositories.CustomerRepository;
 import com.pasadita.api.repositories.EmployeeRepository;
 import com.pasadita.api.repositories.PaymentMethodRepository;
 import com.pasadita.api.repositories.SaleRepository;
+import com.pasadita.api.repositories.SaleDetailRepository;
 import com.pasadita.api.services.saledetail.SaleDetailService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,7 @@ public class SaleServiceImpl implements SaleService {
     private final PaymentMethodRepository paymentMethodRepository;
     private final SaleMapper saleMapper;
     private final SaleDetailService saleDetailService;
+    private final SaleDetailRepository saleDetailRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -69,6 +72,28 @@ public class SaleServiceImpl implements SaleService {
         Sale updatedSale = saleRepository.save(existingSale);
 
         return Optional.ofNullable(saleMapper.toResponseDto(updatedSale));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SaleDetailResponseDto> getSaleDetails(Long saleId) {
+        List<SaleDetail> saleDetails = saleDetailRepository.findBySaleIdWithDetails(saleId);
+
+        return saleDetails.stream()
+                .map(sd -> SaleDetailResponseDto.builder()
+                        .detailId(sd.getId())
+                        .saleId(sd.getSale().getId())
+                        .saleDate(sd.getSale().getDatetime())
+                        .productId(sd.getProduct().getId())
+                        .productName(sd.getProduct().getName())
+                        .productCategory(sd.getProduct().getCategory().name())
+                        .quantity(sd.getQuantity())
+                        .unitPrice(sd.getUnitPrice())
+                        .discount(sd.getDiscount())
+                        .subtotal(sd.getSubtotal())
+                        .total(sd.getTotal())
+                        .build())
+                .collect(Collectors.toList());
     }
 
     private Employee findEmployeeById(Long employeeId) {

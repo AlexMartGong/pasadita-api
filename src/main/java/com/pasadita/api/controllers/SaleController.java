@@ -3,6 +3,7 @@ package com.pasadita.api.controllers;
 import com.pasadita.api.dto.sale.SaleCreateDto;
 import com.pasadita.api.dto.sale.SaleResponseDto;
 import com.pasadita.api.dto.sale.SaleUpdateDto;
+import com.pasadita.api.dto.saledetail.SaleDetailResponseDto;
 import com.pasadita.api.services.sale.SaleService;
 import com.pasadita.api.utils.ValidationUtils;
 import jakarta.validation.Valid;
@@ -75,6 +76,26 @@ public class SaleController {
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
             error.put("error", "Error updating the sale");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @GetMapping("/{saleId}/details")
+    public ResponseEntity<?> getSaleDetails(@PathVariable Long saleId) {
+        try {
+            List<SaleDetailResponseDto> details = saleService.getSaleDetails(saleId);
+
+            if (details.isEmpty()) {
+                Map<String, String> response = new HashMap<>();
+                response.put("message", "No details found for the specified sale.");
+                return ResponseEntity.ok(response);
+            }
+
+            return ResponseEntity.ok(details);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "Error retrieving sale details: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }

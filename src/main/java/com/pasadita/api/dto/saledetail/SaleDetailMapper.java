@@ -43,14 +43,16 @@ public class SaleDetailMapper {
 
     public SaleDetailResponseDto toResponseDto(SaleDetail saleDetail) {
         return SaleDetailResponseDto.builder()
-                .id(saleDetail.getId())
+                .detailId(saleDetail.getId())
                 .saleId(saleDetail.getSale() != null ? saleDetail.getSale().getId() : null)
+                .saleDate(saleDetail.getSale() != null ? saleDetail.getSale().getDatetime() : null)
                 .productId(saleDetail.getProduct() != null ? saleDetail.getProduct().getId() : null)
                 .productName(saleDetail.getProduct() != null ? saleDetail.getProduct().getName() : null)
+                .productCategory(saleDetail.getProduct() != null ? saleDetail.getProduct().getCategory().name() : null)
                 .quantity(saleDetail.getQuantity())
                 .unitPrice(saleDetail.getUnitPrice())
-                .subtotal(saleDetail.getSubtotal())
                 .discount(saleDetail.getDiscount())
+                .subtotal(saleDetail.getSubtotal())
                 .total(saleDetail.getTotal())
                 .build();
     }
