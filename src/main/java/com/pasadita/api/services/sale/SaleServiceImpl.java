@@ -77,7 +77,7 @@ public class SaleServiceImpl implements SaleService {
     @Override
     @Transactional(readOnly = true)
     public List<SaleDetailResponseDto> getSaleDetails(Long saleId) {
-        List<SaleDetail> saleDetails = saleDetailRepository.findBySaleIdWithDetails(saleId);
+        List<SaleDetail> saleDetails = saleDetailRepository.findBySaleIdOrderById(saleId);
 
         return saleDetails.stream()
                 .map(sd -> SaleDetailResponseDto.builder()
