@@ -10,7 +10,7 @@ import com.pasadita.api.entities.SaleDetail;
 import com.pasadita.api.repositories.ProductRepository;
 import com.pasadita.api.repositories.SaleDetailRepository;
 import com.pasadita.api.repositories.SaleRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,19 +19,14 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
+@Transactional
+@RequiredArgsConstructor
 public class SaleDetailServiceImpl implements SaleDetailService {
 
-    @Autowired
-    private SaleDetailRepository saleDetailRepository;
-
-    @Autowired
-    private SaleRepository saleRepository;
-
-    @Autowired
-    private ProductRepository productRepository;
-
-    @Autowired
-    private SaleDetailMapper saleDetailMapper;
+    private final SaleDetailRepository saleDetailRepository;
+    private final SaleRepository saleRepository;
+    private final ProductRepository productRepository;
+    private final SaleDetailMapper saleDetailMapper;
 
     @Transactional(readOnly = true)
     @Override
@@ -67,7 +62,6 @@ public class SaleDetailServiceImpl implements SaleDetailService {
                 .collect(Collectors.toList());
     }
 
-    @Transactional
     @Override
     public Optional<SaleDetailResponseDto> save(SaleDetailCreateDto saleDetailDto) {
         Optional<Sale> saleOpt = saleRepository.findById(saleDetailDto.getSaleId());
@@ -81,7 +75,6 @@ public class SaleDetailServiceImpl implements SaleDetailService {
         return Optional.empty();
     }
 
-    @Transactional
     @Override
     public Optional<SaleDetailResponseDto> update(Long id, SaleDetailUpdateDto saleDetailUpdateDto) {
         return saleDetailRepository.findById(id)
@@ -96,7 +89,6 @@ public class SaleDetailServiceImpl implements SaleDetailService {
                 });
     }
 
-    @Transactional
     @Override
     public void deleteById(Long id) {
         saleDetailRepository.deleteById(id);
