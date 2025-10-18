@@ -1,5 +1,6 @@
 package com.pasadita.api.security;
 
+import com.pasadita.api.repositories.EmployeeRepository;
 import com.pasadita.api.security.filter.JwtAuthenticationFilter;
 import com.pasadita.api.security.filter.JwtValidationFilter;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +19,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 @Configuration
-@EnableMethodSecurity(prePostEnabled = true, securedEnabled = true, jsr250Enabled = true)
+@EnableMethodSecurity(securedEnabled = true, jsr250Enabled = true)
 public class SpringSecurityConfig {
 
     @Autowired
@@ -29,6 +30,9 @@ public class SpringSecurityConfig {
 
     @Autowired
     private TokenJwtConfig tokenConfig;
+
+    @Autowired
+    private EmployeeRepository employeeRepository;
 
     @Bean
     AuthenticationManager authenticationManager() throws Exception {
@@ -47,7 +51,7 @@ public class SpringSecurityConfig {
                 .authorizeHttpRequests((auth) ->
                         auth.requestMatchers(HttpMethod.OPTIONS,
                                 "/**").permitAll().anyRequest().authenticated()
-                ).addFilter(new JwtAuthenticationFilter(authenticationManager(), tokenConfig))
+                ).addFilter(new JwtAuthenticationFilter(authenticationManager(), tokenConfig, employeeRepository))
                 .addFilter(new JwtValidationFilter(authenticationManager(), tokenConfig))
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(management ->

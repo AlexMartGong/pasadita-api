@@ -2,10 +2,10 @@ package com.pasadita.api.security.filter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pasadita.api.entities.Employee;
+import com.pasadita.api.repositories.EmployeeRepository;
 import com.pasadita.api.security.TokenJwtConfig;
 import io.jsonwebtoken.Jwts;
 import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -25,10 +25,12 @@ public class JwtAuthenticationFilter extends UsernamePasswordAuthenticationFilte
 
     private final AuthenticationManager authenticationManager;
     private final TokenJwtConfig tokenJwtConfig;
+    private final EmployeeRepository employeeRepository;
 
-    public JwtAuthenticationFilter(AuthenticationManager authenticationManager, TokenJwtConfig tokenJwtConfig) {
+    public JwtAuthenticationFilter(AuthenticationManager authenticationManager, TokenJwtConfig tokenJwtConfig, EmployeeRepository employeeRepository) {
         this.authenticationManager = authenticationManager;
         this.tokenJwtConfig = tokenJwtConfig;
+        this.employeeRepository = employeeRepository;
         setFilterProcessesUrl("/login");
     }
 
@@ -50,7 +52,7 @@ public class JwtAuthenticationFilter extends UsernamePasswordAuthenticationFilte
     }
 
     @Override
-    protected void successfulAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain chain, Authentication authResult) throws IOException, ServletException {
+    protected void successfulAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain chain, Authentication authResult) throws IOException {
         Date expirationDate = tokenJwtConfig.getExpirationDate();
 
         String token = Jwts.builder()
@@ -62,9 +64,16 @@ public class JwtAuthenticationFilter extends UsernamePasswordAuthenticationFilte
                 .compact();
         response.addHeader(HEADER_AUTHORIZATION, PREFIX_TOKEN + token);
 
+        // Get employee ID
+        Employee employee = employeeRepository.findByUsername(authResult.getName())
+                .orElse(null);
+
         Map<String, Object> body = new HashMap<>();
         body.put("token", token);
         body.put("username", authResult.getName());
+        if (employee != null) {
+            body.put("employeeId", employee.getId());
+        }
         body.put("authorities", authResult.getAuthorities());
         body.put("message", "Login successful");
         body.put("expiresAt", expirationDate.getTime());
@@ -76,7 +85,7 @@ public class JwtAuthenticationFilter extends UsernamePasswordAuthenticationFilte
     }
 
     @Override
-    protected void unsuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response, AuthenticationException failed) throws IOException, ServletException {
+    protected void unsuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response, AuthenticationException failed) throws IOException {
         Map<String, String> body = new HashMap<>();
         body.put("message", "Login failed");
         body.put("error", failed.getMessage());
