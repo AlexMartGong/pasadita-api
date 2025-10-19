@@ -8,7 +8,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
@@ -24,10 +23,6 @@ public class SaleUpdateDto {
 
     @NotNull(message = "The payment method ID is required")
     private Long paymentMethodId;
-
-    @NotNull(message = "The datetime is required")
-    @PastOrPresent(message = "The datetime cannot be in the future")
-    private LocalDateTime datetime;
 
     @NotNull(message = "The subtotal is required")
     @DecimalMin(value = "0.00", message = "The subtotal must be non-negative")

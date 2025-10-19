@@ -29,7 +29,7 @@ public class SaleMapper {
         sale.setEmployee(employee);
         sale.setCustomer(customer);
         sale.setPaymentMethod(paymentMethod);
-//        sale.setDatetime(dto.getDatetime());
+        sale.setDatetime(LocalDateTime.now());
         sale.setSubtotal(dto.getSubtotal());
         sale.setDiscountAmount(dto.getDiscountAmount());
         sale.setTotal(dto.getTotal());
