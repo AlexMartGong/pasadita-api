@@ -13,4 +13,6 @@ public interface SaleDetailRepository extends CrudRepository<SaleDetail, Long> {
 
     @EntityGraph(attributePaths = {"sale", "product"})
     List<SaleDetail> findBySaleIdOrderById(Long saleId);
+
+    void deleteBySaleId(Long saleId);
 }

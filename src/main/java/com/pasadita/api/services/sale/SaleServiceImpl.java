@@ -71,6 +71,15 @@ public class SaleServiceImpl implements SaleService {
         saleMapper.updateEntity(existingSale, saleUpdateDto, employee, customer, paymentMethod);
         Sale updatedSale = saleRepository.save(existingSale);
 
+        // Delete existing sale details
+        saleDetailRepository.deleteBySaleId(existingSale.getId());
+
+        // Create new sale details
+        saleUpdateDto.getSaleDetails().forEach(saleDetailDto -> {
+            saleDetailDto.setSaleId(updatedSale.getId());
+            saleDetailService.save(saleDetailDto);
+        });
+
         return Optional.ofNullable(saleMapper.toResponseDto(updatedSale));
     }
 

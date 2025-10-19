@@ -26,7 +26,7 @@ public class SaleCreateDto {
 
     @NotNull(message = "The subtotal is required")
     @DecimalMin(value = "0.00", message = "The subtotal must be non-negative")
-    @Digits(integer = 12, fraction = 2, message = "The subtotal must have up to 12 digits and 2 decimal places")
+    @Digits(integer = 10, fraction = 2, message = "The subtotal must have up to 10 digits and 2 decimal places")
     private BigDecimal subtotal;
 
     @NotNull(message = "The discount amount is required")
@@ -37,7 +37,7 @@ public class SaleCreateDto {
 
     @NotNull(message = "The total is required")
     @DecimalMin(value = "0.00", message = "The total must be non-negative")
-    @Digits(integer = 12, fraction = 2, message = "The total must have up to 12 digits and 2 decimal places")
+    @Digits(integer = 10, fraction = 2, message = "The total must have up to 10 digits and 2 decimal places")
     private BigDecimal total;
 
     @NotNull(message = "The paid status is required")
