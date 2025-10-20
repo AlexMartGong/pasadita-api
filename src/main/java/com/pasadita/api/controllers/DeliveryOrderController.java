@@ -3,6 +3,7 @@ package com.pasadita.api.controllers;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderChangeStatusDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderCreateDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderResponseDto;
+import com.pasadita.api.dto.deliveryorder.DeliveryOrderUpdateDto;
 import com.pasadita.api.services.deliveryorder.DeliveryOrderService;
 import com.pasadita.api.utils.ValidationUtils;
 import jakarta.validation.Valid;
@@ -51,6 +52,28 @@ public class DeliveryOrderController {
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
             error.put("error", "Error saving the delivery order");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PutMapping("/update/{id}")
+    public ResponseEntity<?> updateDeliveryOrder(@PathVariable Long id, @Valid @RequestBody DeliveryOrderUpdateDto deliveryOrderUpdateDto, BindingResult result) {
+        if (result.hasErrors()) {
+            return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
+        }
+
+        try {
+            DeliveryOrderResponseDto responseDto = deliveryOrderService.update(id, deliveryOrderUpdateDto)
+                    .orElseThrow(() -> new RuntimeException("No se pudo actualizar la orden de entrega"));
+            return ResponseEntity.ok(responseDto);
+        } catch (RuntimeException e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "No se pudo actualizar la orden de entrega. Por favor, verifica los datos. " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "Error updating the delivery order");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
