@@ -23,6 +23,13 @@ public class DeliveryOrderMapper {
                 .build();
     }
 
+    public void updateEntity(DeliveryOrder deliveryOrder, DeliveryOrderUpdateDto dto, Employee deliveryEmployee) {
+        deliveryOrder.setDeliveryEmployee(deliveryEmployee);
+        deliveryOrder.setDeliveryAddress(dto.getDeliveryAddress());
+        deliveryOrder.setContactPhone(dto.getContactPhone());
+        deliveryOrder.setDeliveryCost(dto.getDeliveryCost());
+    }
+
     public DeliveryOrderResponseDto toResponseDto(DeliveryOrder deliveryOrder) {
         return DeliveryOrderResponseDto.builder()
                 .id(deliveryOrder.getId())
