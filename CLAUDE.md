@@ -61,7 +61,7 @@ The application follows a standard layered architecture:
 
 ### Data Model Patterns
 - Entities use Lombok annotations (`@Data`, `@Builder`, `@NoArgsConstructor`, `@AllArgsConstructor`)
-- Enums for categorization (`Category`, `UnitMeasure`, `Position`)
+- Enums for categorization (`Category`, `UnitMeasure`, `Position`, `DeliveryStatus`)
 - Custom validation annotations (`@ExistsEmployee`)
 - Separate DTOs for Create, Update, Response, and specific operations (ChangePassword, ChangeStatus)
 - Dedicated mapper classes for entity-DTO conversion
@@ -69,22 +69,64 @@ The application follows a standard layered architecture:
 ## Development Guidelines
 
 ### Package Structure
-- Group by feature/domain (employee, product, customer)
-- Separate DTOs, services, and controllers by domain
-- Common utilities in `com.pasadita.api.utils`
-- Security configuration in `com.pasadita.api.security`
+```
+com.pasadita.api/
+├── controllers/       # REST endpoints by domain
+├── dto/              # DTOs organized by domain (customer, employee, product, sale, etc.)
+├── entities/         # JPA entities
+├── enums/            # Enums organized by category (product, user, delivery)
+├── exceptions/       # Custom exceptions
+├── repositories/     # Spring Data JPA repositories
+├── security/         # Security configuration and JWT filters
+├── services/         # Business logic (interface + implementation pattern by domain)
+├── utils/            # Common utilities (e.g., ValidationUtils)
+└── validation/       # Custom validation annotations and validators
+```
 
 ### Database Configuration
 - Requires MySQL database named `la_pasadita_database`
-- Default connection: localhost:3306 with root/root credentials
-- Update `application.properties` for different environments
-- Uses Hibernate dialect for MySQL
+- Default connection: `jdbc:mysql://localhost:3306/la_pasadita_database`
+- Default credentials: root/Root1234 (update in `application.properties` for different environments)
+- Uses Hibernate dialect for MySQL with SQL logging enabled
+- Timezone set to GMT-6
 
 ### Security Considerations
 - JWT secret is configured in `application.properties` (change for production)
 - Token expiration set to 24 hours (86400000ms)
 - All endpoints require authentication except OPTIONS requests
 - Admin role required for employee management endpoints
+- Passwords are BCrypt-encoded before storage
+- Employee authentication uses username/password to generate JWT token
+
+### Service Layer Pattern
+Services follow a consistent interface/implementation pattern:
+- Interface defines contract (e.g., `EmployeeService`)
+- Implementation class handles business logic (e.g., `EmployeeServiceImpl`)
+- Services are organized by domain in subpackages
+- Use `@Transactional` annotations for database operations
+- Read-only operations use `@Transactional(readOnly = true)`
+- **Newer services use constructor injection with Lombok `@RequiredArgsConstructor`** instead of `@Autowired`
+- Class-level `@Transactional` can be applied with method-level overrides for read-only operations
+
+### DTO Mapper Pattern
+Each domain has a dedicated mapper class (e.g., `EmployeeMapper`, `CustomerMapper`):
+- `toResponseDto(Entity)` - converts entity to response DTO
+- `toEntity(CreateDto)` - converts create DTO to entity
+- `updateEntityFromDto(Entity, UpdateDto)` - updates existing entity from update DTO
+- Mappers are Spring components (`@Component`) for dependency injection
+
+### Controller Patterns
+- Use `@PreAuthorize` for role-based access control
+- Validate request bodies with `@Valid` and `BindingResult`
+- Return validation errors using `ValidationUtils.getValidationErrors(result)`
+- Return appropriate HTTP status codes (200 OK, 201 CREATED, 404 NOT_FOUND, etc.)
+- Use `Optional` for nullable responses
+
+### Repository Pattern
+- All repositories extend `CrudRepository<Entity, Long>` or `JpaRepository<Entity, Long>`
+- Custom query methods follow Spring Data JPA naming conventions (e.g., `findBySaleId`, `findByUsername`)
+- Use `@EntityGraph` to optimize fetching and avoid N+1 queries (e.g., `@EntityGraph(attributePaths = {"sale", "product"})`)
+- Repositories are organized by domain with corresponding entities
 
 ### Testing Approach
 - Uses Spring Boot Test framework
@@ -92,6 +134,29 @@ The application follows a standard layered architecture:
 - Spring Security Test support available
 - REST Docs integration for API documentation
 
-### Recent Additions
-- PaymentMethod and Sale entities have been added to the domain model
-- Working on sales management functionality
+### Domain Model
+Current domains include:
+- **Employee**: User management with positions (ADMIN, CASHIER, DRIVER, etc.)
+- **Customer**: Customer management with customer types
+- **CustomerType**: Customer categorization
+- **Product**: Inventory with categories and unit measures
+- **Sale**: Sales transactions with payment methods and sale details
+  - Relationships: ManyToOne with Employee, Customer (optional), PaymentMethod
+  - OneToMany with SaleDetail
+  - Tracks subtotal, discount, total, paid status, and notes
+- **SaleDetail**: Line items for sales
+  - ManyToOne relationships with Sale and Product
+  - Tracks quantity, unit price, and subtotal
+- **PaymentMethod**: Payment method catalog (cash, card, etc.)
+- **DeliveryOrder**: Delivery management with status tracking
+  - OneToOne relationship with Sale
+  - ManyToOne with Employee (delivery driver)
+  - Tracks status, request date, delivery address, contact phone, and delivery cost
+
+### Entity Relationship Patterns
+- Use `@ManyToOne(fetch = FetchType.LAZY)` for many-to-one relationships
+- Use `@OneToMany(mappedBy = "...", cascade = CascadeType.ALL, fetch = FetchType.LAZY)` for one-to-many
+- Use `@OneToOne` with `unique = true` constraint for one-to-one relationships
+- Exclude collections from `@ToString` to avoid lazy loading issues
+- Use `@EqualsAndHashCode(of = "id")` to prevent infinite loops in bidirectional relationships
+- Default values use `@Builder.Default` annotation
