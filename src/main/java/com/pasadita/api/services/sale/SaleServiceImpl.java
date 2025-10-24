@@ -1,5 +1,6 @@
 package com.pasadita.api.services.sale;
 
+import com.pasadita.api.dto.sale.SaleChangeStatusDto;
 import com.pasadita.api.dto.sale.SaleCreateDto;
 import com.pasadita.api.dto.sale.SaleMapper;
 import com.pasadita.api.dto.sale.SaleResponseDto;
@@ -108,6 +109,17 @@ public class SaleServiceImpl implements SaleService {
     private Employee findEmployeeById(Long employeeId) {
         return employeeRepository.findById(employeeId)
                 .orElseThrow(() -> new RuntimeException("Employee not found with id: " + employeeId));
+    }
+
+    @Override
+    public Optional<SaleResponseDto> changeStatus(Long id, SaleChangeStatusDto changeStatusDto) {
+        Sale sale = saleRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Sale not found with id: " + id));
+
+        sale.setPaid(changeStatusDto.getPaid());
+        Sale updatedSale = saleRepository.save(sale);
+
+        return Optional.ofNullable(saleMapper.toResponseDto(updatedSale));
     }
 
     private Customer findCustomerById(Long customerId) {
