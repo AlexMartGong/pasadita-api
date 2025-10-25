@@ -15,7 +15,7 @@ public class DeliveryOrderMapper {
         return DeliveryOrder.builder()
                 .sale(sale)
                 .deliveryEmployee(deliveryEmployee)
-                .status(DeliveryStatus.PENDIENTE)
+                .status(DeliveryStatus.ACTIVO)
                 .requestDate(LocalDateTime.now())
                 .deliveryAddress(dto.getDeliveryAddress())
                 .contactPhone(dto.getContactPhone())

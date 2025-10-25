@@ -79,7 +79,7 @@ public class DeliveryOrderController {
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
-    @PatchMapping("/change-status/{id}")
+    @PutMapping("/change-status/{id}")
     public ResponseEntity<?> changeStatus(@PathVariable Long id, @Valid @RequestBody DeliveryOrderChangeStatusDto deliveryOrderChangeStatusDto, BindingResult result) {
         if (result.hasErrors()) {
             return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
