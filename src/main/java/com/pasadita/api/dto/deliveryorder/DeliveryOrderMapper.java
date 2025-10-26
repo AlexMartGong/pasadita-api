@@ -34,13 +34,12 @@ public class DeliveryOrderMapper {
         return DeliveryOrderResponseDto.builder()
                 .id(deliveryOrder.getId())
                 .saleId(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getId() : null)
-                .deliveryEmployeeId(deliveryOrder.getDeliveryEmployee() != null ? deliveryOrder.getDeliveryEmployee().getId() : null)
-                .deliveryEmployeeName(deliveryOrder.getDeliveryEmployee() != null ? deliveryOrder.getDeliveryEmployee().getFullName() : null)
-                .status(deliveryOrder.getStatus())
+                .customerName(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getCustomer().getName() : null)
                 .requestDate(deliveryOrder.getRequestDate())
                 .deliveryAddress(deliveryOrder.getDeliveryAddress())
                 .contactPhone(deliveryOrder.getContactPhone())
-                .deliveryCost(deliveryOrder.getDeliveryCost())
+                .paid(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getPaid() : false)
+                .total(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getTotal() : null)
                 .build();
     }
 }
