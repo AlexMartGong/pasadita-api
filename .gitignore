@@ -56,12 +56,10 @@ application-local.properties
 
 # Archivos de dependencias y compilación
 .env.example
-.gitignore
 check-tables.js
 index.ts
 package.json
 package-lock.json
-README.md
 settings.local.json
 tsconfig.json
 /mcp-server
