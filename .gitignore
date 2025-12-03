@@ -18,7 +18,6 @@ target/
 *.iws
 *.iml
 *.ipr
-application.properties
 
 ### NetBeans ###
 /nbproject/private/
@@ -45,11 +44,6 @@ logs/
 *~.nib
 .DS_Store
 Thumbs.db
-
-# Archivos de configuración local y credenciales
-application-local.properties
-*.key
-*.pem
 
 # Archivos de base de datos en memoria
 *.db
