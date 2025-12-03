@@ -4,6 +4,7 @@ import com.pasadita.api.dto.deliveryorder.DeliveryOrderChangeStatusDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderCreateDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderMapper;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderResponseDto;
+import com.pasadita.api.dto.deliveryorder.DeliveryOrderSummaryDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderUpdateDto;
 import com.pasadita.api.entities.DeliveryOrder;
 import com.pasadita.api.entities.Employee;
@@ -15,7 +16,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -31,11 +36,27 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<DeliveryOrderResponseDto> findAll() {
-        List<DeliveryOrder> deliveryOrders = (List<DeliveryOrder>) deliveryOrderRepository.findAll();
-        return deliveryOrders.stream()
+    public DeliveryOrderSummaryDto findAll() {
+        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+        LocalDateTime endOfDay = startOfDay.plusDays(1);
+
+        List<DeliveryOrder> deliveryOrders = deliveryOrderRepository.findByRequestDateBetween(startOfDay, endOfDay);
+        List<DeliveryOrderResponseDto> orderDtos = deliveryOrders.stream()
                 .map(deliveryOrderMapper::toResponseDto)
                 .collect(Collectors.toList());
+
+        int totalOrders = orderDtos.size();
+        BigDecimal totalAmount = orderDtos.stream()
+                .filter(DeliveryOrderResponseDto::isPaid)
+                .map(DeliveryOrderResponseDto::getTotal)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return DeliveryOrderSummaryDto.builder()
+                .orders(orderDtos)
+                .totalOrders(totalOrders)
+                .totalAmount(totalAmount)
+                .build();
     }
 
     @Override

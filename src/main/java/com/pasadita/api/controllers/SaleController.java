@@ -1,5 +1,6 @@
 package com.pasadita.api.controllers;
 
+import com.pasadita.api.dto.sale.SaleChangeStatusDto;
 import com.pasadita.api.dto.sale.SaleCreateDto;
 import com.pasadita.api.dto.sale.SaleResponseDto;
 import com.pasadita.api.dto.sale.SaleUpdateDto;
@@ -96,6 +97,27 @@ public class SaleController {
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
             error.put("error", "Error retrieving sale details: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PutMapping("/change-status/{id}")
+    public ResponseEntity<?> changeStatus(@PathVariable Long id, @Valid @RequestBody SaleChangeStatusDto changeStatusDto, BindingResult result) {
+        if (result.hasErrors()) {
+            return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
+        }
+
+        try {
+            Optional<SaleResponseDto> updatedSale = saleService.changeStatus(id, changeStatusDto);
+            return ResponseEntity.ok(updatedSale);
+        } catch (RuntimeException e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "Error changing sale status");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }

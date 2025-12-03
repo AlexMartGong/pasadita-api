@@ -20,7 +20,7 @@ public class SaleMapper {
                 .subtotal(dto.getSubtotal())
                 .discountAmount(dto.getDiscountAmount())
                 .total(dto.getTotal())
-                .paid(dto.getPaid())
+                .paid(true)
                 .notes(dto.getNotes())
                 .build();
     }

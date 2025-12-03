@@ -1,5 +1,6 @@
 package com.pasadita.api.services.sale;
 
+import com.pasadita.api.dto.sale.SaleChangeStatusDto;
 import com.pasadita.api.dto.sale.SaleCreateDto;
 import com.pasadita.api.dto.sale.SaleResponseDto;
 import com.pasadita.api.dto.sale.SaleUpdateDto;
@@ -16,4 +17,6 @@ public interface SaleService {
     Optional<SaleResponseDto> update(Long id, SaleUpdateDto saleUpdateDto);
 
     List<SaleDetailResponseDto> getSaleDetails(Long saleId);
+
+    Optional<SaleResponseDto> changeStatus(Long id, SaleChangeStatusDto changeStatusDto);
 }

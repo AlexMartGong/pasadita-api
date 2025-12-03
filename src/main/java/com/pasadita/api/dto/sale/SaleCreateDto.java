@@ -40,10 +40,6 @@ public class SaleCreateDto {
     @Digits(integer = 10, fraction = 2, message = "The total must have up to 10 digits and 2 decimal places")
     private BigDecimal total;
 
-    @NotNull(message = "The paid status is required")
-    @Builder.Default
-    private Boolean paid = true;
-
     @Size(max = 500, message = "The notes cannot exceed 500 characters")
     @Pattern(regexp = "^[a-zA-Z0-9\\s.,'-]*$", message = "The notes contain invalid characters")
     private String notes;

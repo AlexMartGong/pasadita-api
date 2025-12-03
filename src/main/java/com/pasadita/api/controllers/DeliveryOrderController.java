@@ -3,6 +3,7 @@ package com.pasadita.api.controllers;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderChangeStatusDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderCreateDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderResponseDto;
+import com.pasadita.api.dto.deliveryorder.DeliveryOrderSummaryDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderUpdateDto;
 import com.pasadita.api.services.deliveryorder.DeliveryOrderService;
 import com.pasadita.api.utils.ValidationUtils;
@@ -14,7 +15,6 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -29,9 +29,9 @@ public class DeliveryOrderController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @GetMapping("/all")
-    public ResponseEntity<List<DeliveryOrderResponseDto>> getAllDeliveryOrders() {
-        List<DeliveryOrderResponseDto> deliveryOrders = deliveryOrderService.findAll();
-        return ResponseEntity.ok(deliveryOrders);
+    public ResponseEntity<DeliveryOrderSummaryDto> getAllDeliveryOrders() {
+        DeliveryOrderSummaryDto summary = deliveryOrderService.findAll();
+        return ResponseEntity.ok(summary);
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
@@ -79,7 +79,7 @@ public class DeliveryOrderController {
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
-    @PatchMapping("/change-status/{id}")
+    @PutMapping("/change-status/{id}")
     public ResponseEntity<?> changeStatus(@PathVariable Long id, @Valid @RequestBody DeliveryOrderChangeStatusDto deliveryOrderChangeStatusDto, BindingResult result) {
         if (result.hasErrors()) {
             return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
