@@ -46,11 +46,6 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Archivos de configuración local y credenciales
-application-local.properties
-*.key
-*.pem
-
 # Archivos de base de datos en memoria
 *.db
 *.sqlite
