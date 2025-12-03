@@ -47,6 +47,7 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
 
         int totalOrders = orderDtos.size();
         BigDecimal totalAmount = orderDtos.stream()
+                .filter(DeliveryOrderResponseDto::isPaid)
                 .map(DeliveryOrderResponseDto::getTotal)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
