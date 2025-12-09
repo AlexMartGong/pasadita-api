@@ -5,6 +5,7 @@ import com.pasadita.api.dto.sale.SaleCreateDto;
 import com.pasadita.api.dto.sale.SaleResponseDto;
 import com.pasadita.api.dto.sale.SaleUpdateDto;
 import com.pasadita.api.dto.saledetail.SaleDetailResponseDto;
+import com.pasadita.api.dto.ticket.TicketResponseDto;
 import com.pasadita.api.services.sale.SaleService;
 import com.pasadita.api.utils.ValidationUtils;
 import jakarta.validation.Valid;
@@ -118,6 +119,26 @@ public class SaleController {
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
             error.put("error", "Error changing sale status");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @GetMapping("/{saleId}/ticket")
+    public ResponseEntity<?> getTicket(@PathVariable Long saleId) {
+        try {
+            Optional<TicketResponseDto> ticket = saleService.getTicket(saleId);
+
+            if (ticket.isEmpty()) {
+                Map<String, String> error = new HashMap<>();
+                error.put("error", "Sale not found with id: " + saleId);
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+            }
+
+            return ResponseEntity.ok(ticket.get());
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "Error retrieving ticket: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }

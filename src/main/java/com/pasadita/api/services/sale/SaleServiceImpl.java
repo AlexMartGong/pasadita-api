@@ -6,8 +6,10 @@ import com.pasadita.api.dto.sale.SaleMapper;
 import com.pasadita.api.dto.sale.SaleResponseDto;
 import com.pasadita.api.dto.sale.SaleUpdateDto;
 import com.pasadita.api.dto.saledetail.SaleDetailResponseDto;
+import com.pasadita.api.dto.ticket.TicketResponseDto;
 import com.pasadita.api.entities.*;
 import com.pasadita.api.repositories.CustomerRepository;
+import com.pasadita.api.repositories.DeliveryOrderRepository;
 import com.pasadita.api.repositories.EmployeeRepository;
 import com.pasadita.api.repositories.PaymentMethodRepository;
 import com.pasadita.api.repositories.SaleRepository;
@@ -30,6 +32,7 @@ public class SaleServiceImpl implements SaleService {
     private final EmployeeRepository employeeRepository;
     private final CustomerRepository customerRepository;
     private final PaymentMethodRepository paymentMethodRepository;
+    private final DeliveryOrderRepository deliveryOrderRepository;
     private final SaleMapper saleMapper;
     private final SaleDetailService saleDetailService;
     private final SaleDetailRepository saleDetailRepository;
@@ -130,5 +133,20 @@ public class SaleServiceImpl implements SaleService {
     private PaymentMethod findPaymentMethodById(Long paymentMethodId) {
         return paymentMethodRepository.findById(paymentMethodId)
                 .orElseThrow(() -> new RuntimeException("Payment method not found with id: " + paymentMethodId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<TicketResponseDto> getTicket(Long saleId) {
+        Optional<Sale> saleOptional = saleRepository.findWithDetailsById(saleId);
+
+        if (saleOptional.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Sale sale = saleOptional.get();
+        DeliveryOrder deliveryOrder = deliveryOrderRepository.findBySaleId(saleId).orElse(null);
+
+        return Optional.of(saleMapper.toTicketResponseDto(sale, deliveryOrder));
     }
 }
