@@ -27,7 +27,7 @@ public class CustomerController {
         this.customerService = customerService;
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/all")
     public ResponseEntity<List<CustomerResponseDto>> getAllCustomers() {
         List<CustomerResponseDto> customers = customerService.findAll();

@@ -24,7 +24,7 @@ public class EmployeeController {
         this.employeeService = employeeService;
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/all")
     public ResponseEntity<List<EmployeeResponseDto>> getAllEmployees() {
         List<EmployeeResponseDto> employees = employeeService.findAll();

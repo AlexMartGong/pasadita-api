@@ -37,7 +37,7 @@ public class SaleController {
         return ResponseEntity.ok(sales);
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @PostMapping("/save")
     public ResponseEntity<?> saveSale(@Valid @RequestBody SaleCreateDto saleCreateDto, BindingResult result) {
         if (result.hasErrors()) {
@@ -82,7 +82,7 @@ public class SaleController {
         }
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/{saleId}/details")
     public ResponseEntity<?> getSaleDetails(@PathVariable Long saleId) {
         try {
@@ -123,7 +123,7 @@ public class SaleController {
         }
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/{saleId}/ticket")
     public ResponseEntity<?> getTicket(@PathVariable Long saleId) {
         try {

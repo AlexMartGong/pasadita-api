@@ -34,7 +34,7 @@ public class DeliveryOrderController {
         return ResponseEntity.ok(summary);
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @PostMapping("/save")
     public ResponseEntity<?> saveDeliveryOrder(@Valid @RequestBody DeliveryOrderCreateDto deliveryOrderCreateDto, BindingResult result) {
         if (result.hasErrors()) {
