@@ -30,7 +30,7 @@ public class SaleController {
         this.saleService = saleService;
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/all")
     public ResponseEntity<List<SaleResponseDto>> getAllSales() {
         List<SaleResponseDto> sales = saleService.findAll();
