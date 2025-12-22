@@ -27,14 +27,14 @@ public class DeliveryOrderController {
         this.deliveryOrderService = deliveryOrderService;
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/all")
     public ResponseEntity<DeliveryOrderSummaryDto> getAllDeliveryOrders() {
         DeliveryOrderSummaryDto summary = deliveryOrderService.findAll();
         return ResponseEntity.ok(summary);
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @PostMapping("/save")
     public ResponseEntity<?> saveDeliveryOrder(@Valid @RequestBody DeliveryOrderCreateDto deliveryOrderCreateDto, BindingResult result) {
         if (result.hasErrors()) {

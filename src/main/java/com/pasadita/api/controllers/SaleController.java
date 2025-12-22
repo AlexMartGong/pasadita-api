@@ -5,6 +5,7 @@ import com.pasadita.api.dto.sale.SaleCreateDto;
 import com.pasadita.api.dto.sale.SaleResponseDto;
 import com.pasadita.api.dto.sale.SaleUpdateDto;
 import com.pasadita.api.dto.saledetail.SaleDetailResponseDto;
+import com.pasadita.api.dto.ticket.TicketResponseDto;
 import com.pasadita.api.services.sale.SaleService;
 import com.pasadita.api.utils.ValidationUtils;
 import jakarta.validation.Valid;
@@ -29,14 +30,14 @@ public class SaleController {
         this.saleService = saleService;
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/all")
     public ResponseEntity<List<SaleResponseDto>> getAllSales() {
         List<SaleResponseDto> sales = saleService.findAll();
         return ResponseEntity.ok(sales);
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @PostMapping("/save")
     public ResponseEntity<?> saveSale(@Valid @RequestBody SaleCreateDto saleCreateDto, BindingResult result) {
         if (result.hasErrors()) {
@@ -81,7 +82,7 @@ public class SaleController {
         }
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/{saleId}/details")
     public ResponseEntity<?> getSaleDetails(@PathVariable Long saleId) {
         try {
@@ -118,6 +119,26 @@ public class SaleController {
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
             error.put("error", "Error changing sale status");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
+    @GetMapping("/{saleId}/ticket")
+    public ResponseEntity<?> getTicket(@PathVariable Long saleId) {
+        try {
+            Optional<TicketResponseDto> ticket = saleService.getTicket(saleId);
+
+            if (ticket.isEmpty()) {
+                Map<String, String> error = new HashMap<>();
+                error.put("error", "Sale not found with id: " + saleId);
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+            }
+
+            return ResponseEntity.ok(ticket.get());
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "Error retrieving ticket: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
