@@ -6,5 +6,7 @@ public enum UnitMeasure {
     KILOGRAMO,
     GRAMO,
     LITRO,
-    MILILITRO
+    MILILITRO,
+    ARPILLA,
+    CAJA,
 }
