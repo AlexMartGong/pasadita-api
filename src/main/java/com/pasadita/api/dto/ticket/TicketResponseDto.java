@@ -33,4 +33,8 @@ public class TicketResponseDto {
     private boolean paid;
     private String notes;
     private List<SaleDetailResponseDto> saleDetails;
+
+    public boolean isPedido() {
+        return deliveryOrderId != null && deliveryAddress != null;
+    }
 }

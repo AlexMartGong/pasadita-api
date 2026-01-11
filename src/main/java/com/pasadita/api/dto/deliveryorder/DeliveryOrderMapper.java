@@ -23,6 +23,18 @@ public class DeliveryOrderMapper {
                 .build();
     }
 
+    public DeliveryOrder toEntity(DeliveryOrderEmbeddedDto dto, Sale sale, Employee deliveryEmployee) {
+        return DeliveryOrder.builder()
+                .sale(sale)
+                .deliveryEmployee(deliveryEmployee)
+                .status(DeliveryStatus.ACTIVO)
+                .requestDate(LocalDateTime.now())
+                .deliveryAddress(dto.getDeliveryAddress())
+                .contactPhone(dto.getContactPhone())
+                .deliveryCost(dto.getDeliveryCost())
+                .build();
+    }
+
     public void updateEntity(DeliveryOrder deliveryOrder, DeliveryOrderUpdateDto dto, Employee deliveryEmployee) {
         deliveryOrder.setDeliveryEmployee(deliveryEmployee);
         deliveryOrder.setDeliveryAddress(dto.getDeliveryAddress());

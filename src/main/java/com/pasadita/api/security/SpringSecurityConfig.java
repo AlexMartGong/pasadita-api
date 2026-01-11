@@ -49,8 +49,10 @@ public class SpringSecurityConfig {
         return http.cors(cors ->
                         cors.configurationSource(corsConfigurationSource))
                 .authorizeHttpRequests((auth) ->
-                        auth.requestMatchers(HttpMethod.OPTIONS,
-                                "/**").permitAll().anyRequest().authenticated()
+                        auth.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                                .requestMatchers("/ws/**").permitAll() // WebSocket endpoints
+                                .requestMatchers("/api/printer/**").permitAll() // Printer testing (opcional)
+                                .anyRequest().authenticated()
                 ).addFilter(new JwtAuthenticationFilter(authenticationManager(), tokenConfig, employeeRepository))
                 .addFilter(new JwtValidationFilter(authenticationManager(), tokenConfig))
                 .csrf(AbstractHttpConfigurer::disable)
