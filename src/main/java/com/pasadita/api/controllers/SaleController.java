@@ -1,5 +1,6 @@
 package com.pasadita.api.controllers;
 
+import com.pasadita.api.config.PrinterWebSocketHandler;
 import com.pasadita.api.dto.sale.SaleChangeStatusDto;
 import com.pasadita.api.dto.sale.SaleCreateDto;
 import com.pasadita.api.dto.sale.SaleResponseDto;
@@ -19,15 +20,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api/sales")
 public class SaleController {
 
     private final SaleService saleService;
+    private final PrinterWebSocketHandler printerWebSocketHandler;
 
-    public SaleController(SaleService saleService) {
+    public SaleController(SaleService saleService, PrinterWebSocketHandler printerWebSocketHandler) {
         this.saleService = saleService;
+        this.printerWebSocketHandler = printerWebSocketHandler;
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
@@ -47,6 +51,10 @@ public class SaleController {
         try {
             SaleResponseDto responseDto = saleService.save(saleCreateDto)
                     .orElseThrow(() -> new RuntimeException("No se pudo guardar la venta"));
+
+            // Enviar ticket a la impresora de forma asíncrona
+            sendTicketToPrinterAsync(responseDto.getId(), saleCreateDto.getStationId());
+
             return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
         } catch (RuntimeException e) {
 
@@ -59,6 +67,33 @@ public class SaleController {
             error.put("error", "Error saving the sale");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
+    }
+
+    /**
+     * Envía el ticket de impresión de forma asíncrona para no bloquear la respuesta HTTP.
+     *
+     * @param saleId    ID de la venta
+     * @param stationId ID de la estación de impresión (opcional)
+     */
+    private void sendTicketToPrinterAsync(Long saleId, String stationId) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                Optional<TicketResponseDto> ticketOpt = saleService.getTicket(saleId);
+                if (ticketOpt.isPresent()) {
+                    TicketResponseDto ticket = ticketOpt.get();
+                    System.out.println("Tiket: " + ticket);
+                    if (stationId != null && !stationId.isBlank()) {
+                        // Enviar a una estación específica
+                        printerWebSocketHandler.sendPrintCommand(stationId, ticket);
+                    } else {
+                        // Si no se especifica estación, enviar a todas las conectadas
+                        printerWebSocketHandler.sendPrintCommandToAll(ticket);
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Error al enviar ticket a impresora: " + e.getMessage());
+            }
+        });
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")

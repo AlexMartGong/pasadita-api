@@ -1,5 +1,7 @@
 package com.pasadita.api.services.sale;
 
+import com.pasadita.api.dto.deliveryorder.DeliveryOrderEmbeddedDto;
+import com.pasadita.api.dto.deliveryorder.DeliveryOrderMapper;
 import com.pasadita.api.dto.sale.SaleChangeStatusDto;
 import com.pasadita.api.dto.sale.SaleCreateDto;
 import com.pasadita.api.dto.sale.SaleMapper;
@@ -34,6 +36,7 @@ public class SaleServiceImpl implements SaleService {
     private final PaymentMethodRepository paymentMethodRepository;
     private final DeliveryOrderRepository deliveryOrderRepository;
     private final SaleMapper saleMapper;
+    private final DeliveryOrderMapper deliveryOrderMapper;
     private final SaleDetailService saleDetailService;
     private final SaleDetailRepository saleDetailRepository;
 
@@ -59,6 +62,14 @@ public class SaleServiceImpl implements SaleService {
             saleDetailDto.setSaleId(savedSale.getId());
             saleDetailService.save(saleDetailDto);
         });
+
+        // Crear delivery order si se proporciona información de entrega
+        DeliveryOrderEmbeddedDto deliveryOrderDto = saleCreateDto.getDeliveryOrder();
+        if (deliveryOrderDto != null) {
+            Employee deliveryEmployee = findEmployeeById(deliveryOrderDto.getDeliveryEmployeeId());
+            DeliveryOrder deliveryOrder = deliveryOrderMapper.toEntity(deliveryOrderDto, savedSale, deliveryEmployee);
+            deliveryOrderRepository.save(deliveryOrder);
+        }
 
         return Optional.ofNullable(saleMapper.toResponseDto(savedSale));
     }

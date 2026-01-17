@@ -1,6 +1,8 @@
 package com.pasadita.api.dto.sale;
 
+import com.pasadita.api.dto.deliveryorder.DeliveryOrderEmbeddedDto;
 import com.pasadita.api.dto.saledetail.SaleDetailCreateDto;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -44,6 +46,16 @@ public class SaleCreateDto {
     @Pattern(regexp = "^[a-zA-Z0-9\\s.,'-]*$", message = "The notes contain invalid characters")
     private String notes;
 
+    @Size(max = 50, message = "The stationId cannot exceed 50 characters")
+    private String stationId;
+
     @NotNull(message = "The sale details are required")
     private List<SaleDetailCreateDto> saleDetails;
+
+    /**
+     * Información opcional de la orden de entrega (delivery).
+     * Si se proporciona, se creará el delivery order junto con la venta.
+     */
+    @Valid
+    private DeliveryOrderEmbeddedDto deliveryOrder;
 }
