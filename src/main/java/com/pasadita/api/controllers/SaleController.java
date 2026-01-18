@@ -81,7 +81,7 @@ public class SaleController {
                 Optional<TicketResponseDto> ticketOpt = saleService.getTicket(saleId);
                 if (ticketOpt.isPresent()) {
                     TicketResponseDto ticket = ticketOpt.get();
-                    System.out.println("Tiket: " + ticket);
+                    System.out.println("Ticket: " + ticket);
                     if (stationId != null && !stationId.isBlank()) {
                         // Enviar a una estación específica
                         printerWebSocketHandler.sendPrintCommand(stationId, ticket);

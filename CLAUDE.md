@@ -37,9 +37,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Architecture Overview
 
 ### Technology Stack
-- **Framework**: Spring Boot 3.5.5 with Java 17
+- **Framework**: Spring Boot 3.5.8 with Java 17
 - **Database**: MySQL with JPA/Hibernate
 - **Security**: JWT-based authentication with Spring Security
+- **Real-time**: WebSocket for printer connections
 - **Documentation**: Spring REST Docs with AsciiDoc
 - **Build Tool**: Maven with wrapper
 
@@ -71,8 +72,9 @@ The application follows a standard layered architecture:
 ### Package Structure
 ```
 com.pasadita.api/
-├── controllers/       # REST endpoints by domain
-├── dto/              # DTOs organized by domain (customer, employee, product, sale, etc.)
+├── config/           # WebSocket configuration and handlers
+├── controllers/      # REST endpoints by domain
+├── dto/              # DTOs organized by domain (customer, employee, product, sale, ticket, etc.)
 ├── entities/         # JPA entities
 ├── enums/            # Enums organized by category (product, user, delivery)
 ├── exceptions/       # Custom exceptions
@@ -152,6 +154,14 @@ Current domains include:
   - OneToOne relationship with Sale
   - ManyToOne with Employee (delivery driver)
   - Tracks status, request date, delivery address, contact phone, and delivery cost
+- **Ticket**: Read-only DTO for printing sale receipts via WebSocket
+
+### WebSocket Integration
+The application includes WebSocket support for real-time printer connections:
+- **Endpoint**: `/ws/printer?stationId={stationId}`
+- **Handler**: `PrinterWebSocketHandler` manages station connections
+- **Usage**: When a sale is created, tickets are sent asynchronously to connected printer stations
+- Supports sending to specific station or broadcasting to all connected stations
 
 ### Entity Relationship Patterns
 - Use `@ManyToOne(fetch = FetchType.LAZY)` for many-to-one relationships
