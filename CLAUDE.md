@@ -90,7 +90,11 @@ com.pasadita.api/
 - Default connection: `jdbc:mysql://localhost:3306/la_pasadita_database`
 - Default credentials: root/Root1234 (update in `application.properties` for different environments)
 - Uses Hibernate dialect for MySQL with SQL logging enabled
-- Timezone set to GMT-6
+- **Timezone Strategy**: Database stores all dates in UTC (`serverTimezone=UTC` in production)
+- **Date Conversion**: Use `DateTimeUtils` class for timezone handling:
+  - `DateTimeUtils.nowUtc()` - Get current time in UTC (for saving to DB)
+  - `DateTimeUtils.toMexicoTime(datetime)` - Convert UTC to Mexico time (for API responses)
+  - `DateTimeUtils.toUtc(datetime)` - Convert Mexico time to UTC (for user input)
 
 ### Security Considerations
 - JWT secret is configured in `application.properties` (change for production)

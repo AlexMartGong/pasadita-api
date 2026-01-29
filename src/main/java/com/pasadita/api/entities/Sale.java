@@ -1,5 +1,6 @@
 package com.pasadita.api.entities;
 
+import com.pasadita.api.utils.DateTimeUtils;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import lombok.*;
@@ -36,7 +37,7 @@ public class Sale {
 
     @Column(nullable = false)
     @Builder.Default
-    private LocalDateTime datetime = LocalDateTime.now();
+    private LocalDateTime datetime = DateTimeUtils.nowUtc();
 
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal subtotal;

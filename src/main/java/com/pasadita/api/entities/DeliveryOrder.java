@@ -1,6 +1,7 @@
 package com.pasadita.api.entities;
 
 import com.pasadita.api.enums.delivery.DeliveryStatus;
+import com.pasadita.api.utils.DateTimeUtils;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -34,7 +35,7 @@ public class DeliveryOrder {
 
     @Column(name = "request_date", nullable = false)
     @Builder.Default
-    private LocalDateTime requestDate = LocalDateTime.now();
+    private LocalDateTime requestDate = DateTimeUtils.nowUtc();
 
     @Column(name = "delivery_address", nullable = false, length = 200)
     private String deliveryAddress;

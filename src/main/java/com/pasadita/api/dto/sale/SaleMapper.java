@@ -7,9 +7,9 @@ import com.pasadita.api.entities.Sale;
 import com.pasadita.api.entities.Employee;
 import com.pasadita.api.entities.Customer;
 import com.pasadita.api.entities.PaymentMethod;
+import com.pasadita.api.utils.DateTimeUtils;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -21,7 +21,7 @@ public class SaleMapper {
                 .employee(employee)
                 .customer(customer)
                 .paymentMethod(paymentMethod)
-                .datetime(LocalDateTime.now())
+                .datetime(DateTimeUtils.nowUtc())
                 .subtotal(dto.getSubtotal())
                 .discountAmount(dto.getDiscountAmount())
                 .total(dto.getTotal())
@@ -34,7 +34,7 @@ public class SaleMapper {
         sale.setEmployee(employee);
         sale.setCustomer(customer);
         sale.setPaymentMethod(paymentMethod);
-        sale.setDatetime(LocalDateTime.now());
+        sale.setDatetime(DateTimeUtils.nowUtc());
         sale.setSubtotal(dto.getSubtotal());
         sale.setDiscountAmount(dto.getDiscountAmount());
         sale.setTotal(dto.getTotal());
@@ -51,7 +51,7 @@ public class SaleMapper {
                 .customerName(sale.getCustomer() != null ? sale.getCustomer().getName() : null)
                 .paymentMethodId(sale.getPaymentMethod() != null ? sale.getPaymentMethod().getId() : null)
                 .paymentMethodName(sale.getPaymentMethod() != null ? sale.getPaymentMethod().getName() : null)
-                .datetime(sale.getDatetime())
+                .datetime(DateTimeUtils.toMexicoTime(sale.getDatetime()))
                 .subtotal(sale.getSubtotal())
                 .discountAmount(sale.getDiscountAmount())
                 .total(sale.getTotal())
@@ -66,7 +66,7 @@ public class SaleMapper {
                         .map(sd -> SaleDetailResponseDto.builder()
                                 .detailId(sd.getId())
                                 .saleId(sd.getSale().getId())
-                                .saleDate(sd.getSale().getDatetime())
+                                .saleDate(DateTimeUtils.toMexicoTime(sd.getSale().getDatetime()))
                                 .productId(sd.getProduct().getId())
                                 .productName(sd.getProduct().getName())
                                 .productCategory(sd.getProduct().getCategory().name())
@@ -91,7 +91,7 @@ public class SaleMapper {
                 .deliveryAddress(deliveryOrder != null ? deliveryOrder.getDeliveryAddress() : null)
                 .paymentMethodId(sale.getPaymentMethod() != null ? sale.getPaymentMethod().getId() : null)
                 .paymentMethodName(sale.getPaymentMethod() != null ? sale.getPaymentMethod().getName() : null)
-                .datetime(sale.getDatetime())
+                .datetime(DateTimeUtils.toMexicoTime(sale.getDatetime()))
                 .subtotal(sale.getSubtotal())
                 .discountAmount(sale.getDiscountAmount())
                 .total(sale.getTotal())

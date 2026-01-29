@@ -4,9 +4,9 @@ import com.pasadita.api.entities.DeliveryOrder;
 import com.pasadita.api.entities.Employee;
 import com.pasadita.api.entities.Sale;
 import com.pasadita.api.enums.delivery.DeliveryStatus;
+import com.pasadita.api.utils.DateTimeUtils;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
 
 @Component
 public class DeliveryOrderMapper {
@@ -16,7 +16,7 @@ public class DeliveryOrderMapper {
                 .sale(sale)
                 .deliveryEmployee(deliveryEmployee)
                 .status(DeliveryStatus.ACTIVO)
-                .requestDate(LocalDateTime.now())
+                .requestDate(DateTimeUtils.nowUtc())
                 .deliveryAddress(dto.getDeliveryAddress())
                 .contactPhone(dto.getContactPhone())
                 .deliveryCost(dto.getDeliveryCost())
@@ -28,7 +28,7 @@ public class DeliveryOrderMapper {
                 .sale(sale)
                 .deliveryEmployee(deliveryEmployee)
                 .status(DeliveryStatus.ACTIVO)
-                .requestDate(LocalDateTime.now())
+                .requestDate(DateTimeUtils.nowUtc())
                 .deliveryAddress(dto.getDeliveryAddress())
                 .contactPhone(dto.getContactPhone())
                 .deliveryCost(dto.getDeliveryCost())
@@ -47,7 +47,7 @@ public class DeliveryOrderMapper {
                 .id(deliveryOrder.getId())
                 .saleId(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getId() : null)
                 .customerName(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getCustomer().getName() : null)
-                .requestDate(deliveryOrder.getRequestDate())
+                .requestDate(DateTimeUtils.toMexicoTime(deliveryOrder.getRequestDate()))
                 .deliveryAddress(deliveryOrder.getDeliveryAddress())
                 .contactPhone(deliveryOrder.getContactPhone())
                 .paid(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getPaid() : false)

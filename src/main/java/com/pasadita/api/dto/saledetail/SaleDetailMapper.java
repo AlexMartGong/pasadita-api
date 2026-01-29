@@ -3,6 +3,7 @@ package com.pasadita.api.dto.saledetail;
 import com.pasadita.api.entities.SaleDetail;
 import com.pasadita.api.entities.Sale;
 import com.pasadita.api.entities.Product;
+import com.pasadita.api.utils.DateTimeUtils;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -45,7 +46,7 @@ public class SaleDetailMapper {
         return SaleDetailResponseDto.builder()
                 .detailId(saleDetail.getId())
                 .saleId(saleDetail.getSale() != null ? saleDetail.getSale().getId() : null)
-                .saleDate(saleDetail.getSale() != null ? saleDetail.getSale().getDatetime() : null)
+                .saleDate(saleDetail.getSale() != null ? DateTimeUtils.toMexicoTime(saleDetail.getSale().getDatetime()) : null)
                 .productId(saleDetail.getProduct() != null ? saleDetail.getProduct().getId() : null)
                 .productName(saleDetail.getProduct() != null ? saleDetail.getProduct().getName() : null)
                 .productCategory(saleDetail.getProduct() != null ? saleDetail.getProduct().getCategory().name() : null)
