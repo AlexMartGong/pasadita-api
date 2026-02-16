@@ -28,7 +28,8 @@
     </scm>
     <properties>
         <java.version>17</java.version>
-        <logback.version>1.5.19</logback.version>
+        <logback.version>1.5.25</logback.version>
+        <assertj.version>3.27.7</assertj.version>
     </properties>
     <dependencies>
         <dependency>
