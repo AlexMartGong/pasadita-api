@@ -17,4 +17,7 @@ public interface ProductRepository extends CrudRepository<Product, Long> {
 
     List<Product> findByActiveTrue();
 
+    @Query("SELECT p FROM Product p LEFT JOIN SaleDetail sd ON sd.product = p GROUP BY p ORDER BY COALESCE(SUM(sd.quantity), 0) DESC")
+    List<Product> findAllOrderByTotalSoldDesc();
+
 }

@@ -23,7 +23,7 @@ public class ProductServiceImpl implements ProductService {
     @Transactional(readOnly = true)
     @Override
     public List<ProductResponseDto> findAll() {
-        return ((List<Product>) productRepository.findAll())
+        return productRepository.findAllOrderByTotalSoldDesc()
                 .stream()
                 .map(productMapper::toResponseDto)
                 .collect(Collectors.toList());

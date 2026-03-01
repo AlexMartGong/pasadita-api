@@ -30,6 +30,7 @@
         <java.version>17</java.version>
         <logback.version>1.5.25</logback.version>
         <assertj.version>3.27.7</assertj.version>
+        <tomcat.version>10.1.52</tomcat.version>
     </properties>
     <dependencies>
         <dependency>
