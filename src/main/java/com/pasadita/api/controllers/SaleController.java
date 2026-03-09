@@ -5,7 +5,6 @@ import com.pasadita.api.dto.sale.SaleChangeStatusDto;
 import com.pasadita.api.dto.sale.SaleCreateDto;
 import com.pasadita.api.dto.sale.SaleResponseDto;
 import com.pasadita.api.dto.sale.SaleUpdateDto;
-import com.pasadita.api.dto.saledetail.SaleDetailResponseDto;
 import com.pasadita.api.dto.ticket.TicketResponseDto;
 import com.pasadita.api.services.sale.SaleService;
 import com.pasadita.api.utils.ValidationUtils;
@@ -50,16 +49,15 @@ public class SaleController {
 
         try {
             SaleResponseDto responseDto = saleService.save(saleCreateDto)
-                    .orElseThrow(() -> new RuntimeException("No se pudo guardar la venta"));
+                    .orElseThrow(() -> new RuntimeException("Error saving the sale"));
 
-            // Enviar ticket a la impresora de forma asíncrona
             sendTicketToPrinterAsync(responseDto.getId(), saleCreateDto.getStationId());
 
             return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
         } catch (RuntimeException e) {
 
             Map<String, String> error = new HashMap<>();
-            error.put("error", "No se pudo guardar la venta. Por favor, verifica los datos. " + e.getMessage());
+            error.put("error", "Could not save the sale" + e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         } catch (Exception e) {
 
@@ -69,12 +67,6 @@ public class SaleController {
         }
     }
 
-    /**
-     * Envía el ticket de impresión de forma asíncrona para no bloquear la respuesta HTTP.
-     *
-     * @param saleId    ID de la venta
-     * @param stationId ID de la estación de impresión (opcional)
-     */
     private void sendTicketToPrinterAsync(Long saleId, String stationId) {
         CompletableFuture.runAsync(() -> {
             try {
@@ -83,15 +75,13 @@ public class SaleController {
                     TicketResponseDto ticket = ticketOpt.get();
                     System.out.println("Ticket: " + ticket);
                     if (stationId != null && !stationId.isBlank()) {
-                        // Enviar a una estación específica
                         printerWebSocketHandler.sendPrintCommand(stationId, ticket);
                     } else {
-                        // Si no se especifica estación, enviar a todas las conectadas
                         printerWebSocketHandler.sendPrintCommandToAll(ticket);
                     }
                 }
             } catch (Exception e) {
-                System.err.println("Error al enviar ticket a impresora: " + e.getMessage());
+                System.err.println("Error when sending ticket to printer: " + e.getMessage());
             }
         });
     }
@@ -121,7 +111,7 @@ public class SaleController {
     @GetMapping("/{saleId}/details")
     public ResponseEntity<?> getSaleDetails(@PathVariable Long saleId) {
         try {
-            List<SaleDetailResponseDto> details = saleService.getSaleDetails(saleId);
+            Optional<TicketResponseDto> details = saleService.getTicket(saleId);
 
             if (details.isEmpty()) {
                 Map<String, String> response = new HashMap<>();
@@ -160,7 +150,7 @@ public class SaleController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/{saleId}/ticket")
-    public ResponseEntity<?> getTicket(@PathVariable Long saleId) {
+    public ResponseEntity<?> getTicket(@PathVariable Long saleId, @RequestParam(required = false) String stationId) {
         try {
             Optional<TicketResponseDto> ticket = saleService.getTicket(saleId);
 
@@ -169,6 +159,8 @@ public class SaleController {
                 error.put("error", "Sale not found with id: " + saleId);
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
             }
+
+            sendTicketToPrinterAsync(saleId, stationId);
 
             return ResponseEntity.ok(ticket.get());
         } catch (Exception e) {
