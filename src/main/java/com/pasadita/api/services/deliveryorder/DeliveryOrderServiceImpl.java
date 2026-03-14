@@ -16,6 +16,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.pasadita.api.utils.DateTimeUtils;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -37,8 +39,9 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
     @Override
     @Transactional(readOnly = true)
     public DeliveryOrderSummaryDto findAll() {
-        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
-        LocalDateTime endOfDay = startOfDay.plusDays(1);
+        LocalDateTime startOfDayMexico = LocalDate.now(DateTimeUtils.MEXICO_ZONE).atStartOfDay();
+        LocalDateTime startOfDay = DateTimeUtils.toUtc(startOfDayMexico);
+        LocalDateTime endOfDay = DateTimeUtils.toUtc(startOfDayMexico.plusDays(1));
 
         List<DeliveryOrder> deliveryOrders = deliveryOrderRepository.findByRequestDateBetween(startOfDay, endOfDay);
         List<DeliveryOrderResponseDto> orderDtos = deliveryOrders.stream()
