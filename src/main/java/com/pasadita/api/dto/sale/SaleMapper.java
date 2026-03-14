@@ -88,6 +88,7 @@ public class SaleMapper {
                 .customerId(sale.getCustomer() != null ? sale.getCustomer().getId() : null)
                 .customerName(sale.getCustomer() != null ? sale.getCustomer().getName() : null)
                 .customerPhone(sale.getCustomer() != null ? sale.getCustomer().getPhone() : null)
+                .customerDiscount(sale.getCustomer() != null ? sale.getCustomer().getCustom_discount() : null)
                 .deliveryAddress(deliveryOrder != null ? deliveryOrder.getDeliveryAddress() : null)
                 .paymentMethodId(sale.getPaymentMethod() != null ? sale.getPaymentMethod().getId() : null)
                 .paymentMethodName(sale.getPaymentMethod() != null ? sale.getPaymentMethod().getName() : null)

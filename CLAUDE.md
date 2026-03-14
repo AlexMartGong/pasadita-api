@@ -27,22 +27,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Development
 ```bash
-# Run with development profile and live reload
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+# Run with production profile
+./mvnw spring-boot:run -Dspring-boot.run.profiles=prod
 
-# Generate documentation
+# Generate REST Docs documentation
 ./mvnw clean package
 ```
 
 ## Architecture Overview
 
 ### Technology Stack
-- **Framework**: Spring Boot 3.5.8 with Java 17
+- **Framework**: Spring Boot 3.5.11 with Java 17
 - **Database**: MySQL with JPA/Hibernate
 - **Security**: JWT-based authentication with Spring Security
 - **Real-time**: WebSocket for printer connections
 - **Documentation**: Spring REST Docs with AsciiDoc
 - **Build Tool**: Maven with wrapper
+- **Code Quality**: Qodana JVM Community linter
+- **CI/CD**: GitHub Actions (deploy to DigitalOcean on main push, Qodana on PRs)
 
 ### Layered Architecture
 The application follows a standard layered architecture:
@@ -57,8 +59,9 @@ The application follows a standard layered architecture:
 - JWT token authentication with custom filters (`JwtAuthenticationFilter`, `JwtValidationFilter`)
 - Role-based authorization using `@PreAuthorize` annotations
 - Password encoding with BCrypt
-- CORS configuration for cross-origin requests
+- CORS configuration via `CorsConfig` class (production restricted to `https://lapasadita.app`)
 - Stateless session management
+- Roles: `ROLE_ADMIN`, `ROLE_CAJERO` (cashier), `ROLE_PEDIDOS` (orders)
 
 ### Data Model Patterns
 - Entities use Lombok annotations (`@Data`, `@Builder`, `@NoArgsConstructor`, `@AllArgsConstructor`)
@@ -72,7 +75,7 @@ The application follows a standard layered architecture:
 ### Package Structure
 ```
 com.pasadita.api/
-├── config/           # WebSocket configuration and handlers
+├── config/           # WebSocket configuration, handlers, and CORS config
 ├── controllers/      # REST endpoints by domain
 ├── dto/              # DTOs organized by domain (customer, employee, product, sale, ticket, etc.)
 ├── entities/         # JPA entities
@@ -81,7 +84,7 @@ com.pasadita.api/
 ├── repositories/     # Spring Data JPA repositories
 ├── security/         # Security configuration and JWT filters
 ├── services/         # Business logic (interface + implementation pattern by domain)
-├── utils/            # Common utilities (e.g., ValidationUtils)
+├── utils/            # Common utilities (DateTimeUtils, ValidationUtils)
 └── validation/       # Custom validation annotations and validators
 ```
 
@@ -90,6 +93,7 @@ com.pasadita.api/
 - Default connection: `jdbc:mysql://localhost:3306/la_pasadita_database`
 - Default credentials: root/Root1234 (update in `application.properties` for different environments)
 - Uses Hibernate dialect for MySQL with SQL logging enabled
+- **Production** (`application-prod.properties`): Uses environment variables (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `JWT_EXPIRATION`), Hibernate `ddl-auto=validate`, HikariCP pool (max 10)
 - **Timezone Strategy**: Database stores all dates in UTC (`serverTimezone=UTC` in production)
 - **Date Conversion**: Use `DateTimeUtils` class for timezone handling:
   - `DateTimeUtils.nowUtc()` - Get current time in UTC (for saving to DB)
@@ -132,6 +136,7 @@ Each domain has a dedicated mapper class (e.g., `EmployeeMapper`, `CustomerMappe
 - All repositories extend `CrudRepository<Entity, Long>` or `JpaRepository<Entity, Long>`
 - Custom query methods follow Spring Data JPA naming conventions (e.g., `findBySaleId`, `findByUsername`)
 - Use `@EntityGraph` to optimize fetching and avoid N+1 queries (e.g., `@EntityGraph(attributePaths = {"sale", "product"})`)
+- Use `@Modifying` + `@Query` for custom update operations (e.g., `updatePriceById`)
 - Repositories are organized by domain with corresponding entities
 
 ### Testing Approach
@@ -142,7 +147,7 @@ Each domain has a dedicated mapper class (e.g., `EmployeeMapper`, `CustomerMappe
 
 ### Domain Model
 Current domains include:
-- **Employee**: User management with positions (ADMIN, CASHIER, DRIVER, etc.)
+- **Employee**: User management with positions (ADMIN, CAJERO, PEDIDOS)
 - **Customer**: Customer management with customer types
 - **CustomerType**: Customer categorization
 - **Product**: Inventory with categories and unit measures

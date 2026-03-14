@@ -23,6 +23,7 @@ public class TicketResponseDto {
     private Long customerId;
     private String customerName;
     private String customerPhone;
+    private BigDecimal customerDiscount;
     private String deliveryAddress;
     private Long paymentMethodId;
     private String paymentMethodName;
