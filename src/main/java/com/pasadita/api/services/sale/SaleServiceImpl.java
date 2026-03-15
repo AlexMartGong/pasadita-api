@@ -14,6 +14,7 @@ import com.pasadita.api.repositories.CustomerRepository;
 import com.pasadita.api.repositories.DeliveryOrderRepository;
 import com.pasadita.api.repositories.EmployeeRepository;
 import com.pasadita.api.repositories.PaymentMethodRepository;
+import com.pasadita.api.repositories.ProductRepository;
 import com.pasadita.api.repositories.SaleRepository;
 import com.pasadita.api.repositories.SaleDetailRepository;
 import com.pasadita.api.services.saledetail.SaleDetailService;
@@ -21,6 +22,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -34,6 +37,7 @@ public class SaleServiceImpl implements SaleService {
     private final EmployeeRepository employeeRepository;
     private final CustomerRepository customerRepository;
     private final PaymentMethodRepository paymentMethodRepository;
+    private final ProductRepository productRepository;
     private final DeliveryOrderRepository deliveryOrderRepository;
     private final SaleMapper saleMapper;
     private final DeliveryOrderMapper deliveryOrderMapper;
@@ -54,6 +58,34 @@ public class SaleServiceImpl implements SaleService {
         Employee employee = findEmployeeById(saleCreateDto.getEmployeeId());
         Customer customer = findCustomerById(saleCreateDto.getCustomerId());
         PaymentMethod paymentMethod = findPaymentMethodById(saleCreateDto.getPaymentMethodId());
+        BigDecimal saleSubtotal = BigDecimal.ZERO;
+
+        for (var detailDto : saleCreateDto.getSaleDetails()) {
+            Product product = productRepository.findById(detailDto.getProductId())
+                    .orElseThrow(() -> new RuntimeException("Product not found with id: " + detailDto.getProductId()));
+
+            BigDecimal unitPrice = product.getPrice();
+            BigDecimal detailSubtotal = detailDto.getQuantity()
+                    .multiply(unitPrice)
+                    .setScale(2, RoundingMode.HALF_UP);
+
+            BigDecimal discount = detailDto.getDiscount() != null ? detailDto.getDiscount() : BigDecimal.ZERO;
+            BigDecimal detailTotal = detailSubtotal.subtract(discount).setScale(2, RoundingMode.HALF_UP);
+
+            detailDto.setUnitPrice(unitPrice);
+            detailDto.setSubtotal(detailSubtotal);
+            detailDto.setTotal(detailTotal);
+
+            saleSubtotal = saleSubtotal.add(detailSubtotal);
+        }
+
+        saleSubtotal = saleSubtotal.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal discountAmount = saleCreateDto.getDiscountAmount() != null
+                ? saleCreateDto.getDiscountAmount() : BigDecimal.ZERO;
+        BigDecimal saleTotal = saleSubtotal.subtract(discountAmount).setScale(2, RoundingMode.HALF_UP);
+
+        saleCreateDto.setSubtotal(saleSubtotal);
+        saleCreateDto.setTotal(saleTotal);
 
         Sale sale = saleMapper.toEntity(saleCreateDto, employee, customer, paymentMethod);
         Sale savedSale = saleRepository.save(sale);
@@ -63,7 +95,6 @@ public class SaleServiceImpl implements SaleService {
             saleDetailService.save(saleDetailDto);
         });
 
-        // Crear delivery order si se proporciona información de entrega
         DeliveryOrderEmbeddedDto deliveryOrderDto = saleCreateDto.getDeliveryOrder();
         if (deliveryOrderDto != null) {
             Employee deliveryEmployee = findEmployeeById(deliveryOrderDto.getDeliveryEmployeeId());
