@@ -2,9 +2,33 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+### Senior Developer & SOLID Standards
+
+- **Persona**: Act as a Senior Java Spring Boot Software Architect. Prioritize maintainability, scalability, and clarity
+  over quick hacks.
+- **SOLID & Architecture Principles**:
+    - **S**: Strict Single Responsibility. Controllers only handle HTTP routing/validation, Services contain pure
+      business logic, Repositories handle database queries, and Mappers strictly handle DTO-Entity conversions.
+    - **O**: Always use interfaces for services (e.g., `EmployeeService` and `EmployeeServiceImpl`) to allow extension
+      without modification.
+    - **L**: Ensure implementations are entirely substitutable for their interfaces without altering program
+      correctness.
+    - **I**: Keep interfaces lean and domain-specific; don't force implementations to depend on unused methods.
+    - **D**: STRICTLY use Constructor Injection via Lombok's `@RequiredArgsConstructor`. NEVER use field injection (
+      `@Autowired`).
+- **Spring Boot Best Practices**:
+    - Apply `@Transactional` appropriately in the service layer. Always use `@Transactional(readOnly = true)` for fetch
+      operations.
+    - Prevent N+1 query problems by proactively using `@EntityGraph` in JPA Repositories when fetching related entities.
+    - Enforce security at the Controller level using `@PreAuthorize`.
+- **Clean Code**: Follow DRY and KISS. Avoid primitive obsession by using your domain DTOs. Ensure variables and
+  methods have descriptive, intent-revealing names. Return appropriate HTTP status codes and use `Optional` for nullable
+  responses.
+
 ## Common Development Commands
 
 ### Build and Run
+
 ```bash
 # Build the project
 ./mvnw clean compile
@@ -26,6 +50,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 
 ### Development
+
 ```bash
 # Run with production profile
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=prod
@@ -37,6 +62,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Architecture Overview
 
 ### Technology Stack
+
 - **Framework**: Spring Boot 3.5.11 with Java 17
 - **Database**: MySQL with JPA/Hibernate
 - **Security**: JWT-based authentication with Spring Security
@@ -47,6 +73,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **CI/CD**: GitHub Actions (deploy to DigitalOcean on main push, Qodana on PRs)
 
 ### Layered Architecture
+
 The application follows a standard layered architecture:
 
 1. **Controllers** (`com.pasadita.api.controllers`) - REST endpoints with `@PreAuthorize` security
@@ -56,6 +83,7 @@ The application follows a standard layered architecture:
 5. **DTOs** (`com.pasadita.api.dto`) - Data transfer objects with dedicated mapper classes
 
 ### Security Implementation
+
 - JWT token authentication with custom filters (`JwtAuthenticationFilter`, `JwtValidationFilter`)
 - Role-based authorization using `@PreAuthorize` annotations
 - Password encoding with BCrypt
@@ -64,6 +92,7 @@ The application follows a standard layered architecture:
 - Roles: `ROLE_ADMIN`, `ROLE_CAJERO` (cashier), `ROLE_PEDIDOS` (orders)
 
 ### Data Model Patterns
+
 - Entities use Lombok annotations (`@Data`, `@Builder`, `@NoArgsConstructor`, `@AllArgsConstructor`)
 - Enums for categorization (`Category`, `UnitMeasure`, `Position`, `DeliveryStatus`)
 - Custom validation annotations (`@ExistsEmployee`)
@@ -73,6 +102,7 @@ The application follows a standard layered architecture:
 ## Development Guidelines
 
 ### Package Structure
+
 ```
 com.pasadita.api/
 ├── config/           # WebSocket configuration, handlers, and CORS config
@@ -89,18 +119,21 @@ com.pasadita.api/
 ```
 
 ### Database Configuration
+
 - Requires MySQL database named `la_pasadita_database`
 - Default connection: `jdbc:mysql://localhost:3306/la_pasadita_database`
 - Default credentials: root/Root1234 (update in `application.properties` for different environments)
 - Uses Hibernate dialect for MySQL with SQL logging enabled
-- **Production** (`application-prod.properties`): Uses environment variables (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `JWT_EXPIRATION`), Hibernate `ddl-auto=validate`, HikariCP pool (max 10)
+- **Production** (`application-prod.properties`): Uses environment variables (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
+  `JWT_SECRET`, `JWT_EXPIRATION`), Hibernate `ddl-auto=validate`, HikariCP pool (max 10)
 - **Timezone Strategy**: Database stores all dates in UTC (`serverTimezone=UTC` in production)
 - **Date Conversion**: Use `DateTimeUtils` class for timezone handling:
-  - `DateTimeUtils.nowUtc()` - Get current time in UTC (for saving to DB)
-  - `DateTimeUtils.toMexicoTime(datetime)` - Convert UTC to Mexico time (for API responses)
-  - `DateTimeUtils.toUtc(datetime)` - Convert Mexico time to UTC (for user input)
+    - `DateTimeUtils.nowUtc()` - Get current time in UTC (for saving to DB)
+    - `DateTimeUtils.toMexicoTime(datetime)` - Convert UTC to Mexico time (for API responses)
+    - `DateTimeUtils.toUtc(datetime)` - Convert Mexico time to UTC (for user input)
 
 ### Security Considerations
+
 - JWT secret is configured in `application.properties` (change for production)
 - Token expiration set to 24 hours (86400000ms)
 - All endpoints require authentication except OPTIONS requests
@@ -109,7 +142,9 @@ com.pasadita.api/
 - Employee authentication uses username/password to generate JWT token
 
 ### Service Layer Pattern
+
 Services follow a consistent interface/implementation pattern:
+
 - Interface defines contract (e.g., `EmployeeService`)
 - Implementation class handles business logic (e.g., `EmployeeServiceImpl`)
 - Services are organized by domain in subpackages
@@ -119,13 +154,16 @@ Services follow a consistent interface/implementation pattern:
 - Class-level `@Transactional` can be applied with method-level overrides for read-only operations
 
 ### DTO Mapper Pattern
+
 Each domain has a dedicated mapper class (e.g., `EmployeeMapper`, `CustomerMapper`):
+
 - `toResponseDto(Entity)` - converts entity to response DTO
 - `toEntity(CreateDto)` - converts create DTO to entity
 - `updateEntityFromDto(Entity, UpdateDto)` - updates existing entity from update DTO
 - Mappers are Spring components (`@Component`) for dependency injection
 
 ### Controller Patterns
+
 - Use `@PreAuthorize` for role-based access control
 - Validate request bodies with `@Valid` and `BindingResult`
 - Return validation errors using `ValidationUtils.getValidationErrors(result)`
@@ -133,46 +171,54 @@ Each domain has a dedicated mapper class (e.g., `EmployeeMapper`, `CustomerMappe
 - Use `Optional` for nullable responses
 
 ### Repository Pattern
+
 - All repositories extend `CrudRepository<Entity, Long>` or `JpaRepository<Entity, Long>`
 - Custom query methods follow Spring Data JPA naming conventions (e.g., `findBySaleId`, `findByUsername`)
-- Use `@EntityGraph` to optimize fetching and avoid N+1 queries (e.g., `@EntityGraph(attributePaths = {"sale", "product"})`)
+- Use `@EntityGraph` to optimize fetching and avoid N+1 queries (e.g.,
+  `@EntityGraph(attributePaths = {"sale", "product"})`)
 - Use `@Modifying` + `@Query` for custom update operations (e.g., `updatePriceById`)
 - Repositories are organized by domain with corresponding entities
 
 ### Testing Approach
+
 - Uses Spring Boot Test framework
 - Main test class: `PasaditaApiApplicationTests`
 - Spring Security Test support available
 - REST Docs integration for API documentation
 
 ### Domain Model
+
 Current domains include:
+
 - **Employee**: User management with positions (ADMIN, CAJERO, PEDIDOS)
 - **Customer**: Customer management with customer types
 - **CustomerType**: Customer categorization
 - **Product**: Inventory with categories and unit measures
 - **Sale**: Sales transactions with payment methods and sale details
-  - Relationships: ManyToOne with Employee, Customer (optional), PaymentMethod
-  - OneToMany with SaleDetail
-  - Tracks subtotal, discount, total, paid status, and notes
+    - Relationships: ManyToOne with Employee, Customer (optional), PaymentMethod
+    - OneToMany with SaleDetail
+    - Tracks subtotal, discount, total, paid status, and notes
 - **SaleDetail**: Line items for sales
-  - ManyToOne relationships with Sale and Product
-  - Tracks quantity, unit price, and subtotal
+    - ManyToOne relationships with Sale and Product
+    - Tracks quantity, unit price, and subtotal
 - **PaymentMethod**: Payment method catalog (cash, card, etc.)
 - **DeliveryOrder**: Delivery management with status tracking
-  - OneToOne relationship with Sale
-  - ManyToOne with Employee (delivery driver)
-  - Tracks status, request date, delivery address, contact phone, and delivery cost
+    - OneToOne relationship with Sale
+    - ManyToOne with Employee (delivery driver)
+    - Tracks status, request date, delivery address, contact phone, and delivery cost
 - **Ticket**: Read-only DTO for printing sale receipts via WebSocket
 
 ### WebSocket Integration
+
 The application includes WebSocket support for real-time printer connections:
+
 - **Endpoint**: `/ws/printer?stationId={stationId}`
 - **Handler**: `PrinterWebSocketHandler` manages station connections
 - **Usage**: When a sale is created, tickets are sent asynchronously to connected printer stations
 - Supports sending to specific station or broadcasting to all connected stations
 
 ### Entity Relationship Patterns
+
 - Use `@ManyToOne(fetch = FetchType.LAZY)` for many-to-one relationships
 - Use `@OneToMany(mappedBy = "...", cascade = CascadeType.ALL, fetch = FetchType.LAZY)` for one-to-many
 - Use `@OneToOne` with `unique = true` constraint for one-to-one relationships
