@@ -42,6 +42,11 @@ public class SaleCreateDto {
     @Digits(integer = 10, fraction = 2, message = "The total must have up to 10 digits and 2 decimal places")
     private BigDecimal total;
 
+    @NotNull(message = "The amount tendered is required")
+    @DecimalMin(value = "0.00", message = "The amount tendered must be non-negative")
+    @Digits(integer = 10, fraction = 2, message = "The amount tendered must have up to 10 digits and 2 decimal places")
+    private BigDecimal amountTendered;
+
     @Size(max = 500, message = "The notes cannot exceed 500 characters")
     @Pattern(regexp = "^[a-zA-Z0-9\\s.,'-]*$", message = "The notes contain invalid characters")
     private String notes;
@@ -52,10 +57,6 @@ public class SaleCreateDto {
     @NotNull(message = "The sale details are required")
     private List<SaleDetailCreateDto> saleDetails;
 
-    /**
-     * Información opcional de la orden de entrega (delivery).
-     * Si se proporciona, se creará el delivery order junto con la venta.
-     */
     @Valid
     private DeliveryOrderEmbeddedDto deliveryOrder;
 }

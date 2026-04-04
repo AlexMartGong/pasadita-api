@@ -8,10 +8,6 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 
-/**
- * DTO para incluir información de delivery order dentro de una venta.
- * No requiere saleId porque se asignará automáticamente al crear la venta.
- */
 @Data
 @Builder
 @NoArgsConstructor

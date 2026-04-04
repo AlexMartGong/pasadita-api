@@ -39,6 +39,11 @@ public class SaleUpdateDto {
     @Digits(integer = 12, fraction = 2, message = "The total must have up to 12 digits and 2 decimal places")
     private BigDecimal total;
 
+    @NotNull(message = "The amount tendered is required")
+    @DecimalMin(value = "0.00", message = "The amount tendered must be non-negative")
+    @Digits(integer = 10, fraction = 2, message = "The amount tendered must have up to 10 digits and 2 decimal places")
+    private BigDecimal amountTendered;
+
     @NotNull(message = "The paid status is required")
     private Boolean paid;
 

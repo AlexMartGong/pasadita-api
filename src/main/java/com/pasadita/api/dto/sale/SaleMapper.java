@@ -25,6 +25,7 @@ public class SaleMapper {
                 .subtotal(dto.getSubtotal())
                 .discountAmount(dto.getDiscountAmount())
                 .total(dto.getTotal())
+                .amountTendered(dto.getAmountTendered())
                 .paid(true)
                 .notes(dto.getNotes())
                 .build();
@@ -38,6 +39,7 @@ public class SaleMapper {
         sale.setSubtotal(dto.getSubtotal());
         sale.setDiscountAmount(dto.getDiscountAmount());
         sale.setTotal(dto.getTotal());
+        sale.setAmountTendered(dto.getAmountTendered());
         sale.setPaid(dto.getPaid());
         sale.setNotes(dto.getNotes());
     }
@@ -55,6 +57,8 @@ public class SaleMapper {
                 .subtotal(sale.getSubtotal())
                 .discountAmount(sale.getDiscountAmount())
                 .total(sale.getTotal())
+                .amountTendered(sale.getAmountTendered())
+                .changeDue(sale.getAmountTendered().subtract(sale.getTotal()))
                 .paid(sale.getPaid())
                 .notes(sale.getNotes())
                 .build();
@@ -96,6 +100,8 @@ public class SaleMapper {
                 .subtotal(sale.getSubtotal())
                 .discountAmount(sale.getDiscountAmount())
                 .total(sale.getTotal())
+                .amountTendered(sale.getAmountTendered())
+                .changeDue(sale.getAmountTendered().subtract(sale.getTotal()))
                 .paid(sale.getPaid())
                 .notes(sale.getNotes())
                 .saleDetails(saleDetails)

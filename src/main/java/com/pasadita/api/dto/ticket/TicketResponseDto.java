@@ -31,6 +31,8 @@ public class TicketResponseDto {
     private BigDecimal subtotal;
     private BigDecimal discountAmount;
     private BigDecimal total;
+    private BigDecimal amountTendered;
+    private BigDecimal changeDue;
     private boolean paid;
     private String notes;
     private List<SaleDetailResponseDto> saleDetails;

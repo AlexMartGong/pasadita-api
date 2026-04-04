@@ -49,6 +49,9 @@ public class Sale {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal total;
 
+    @Column(name = "amount_tendered", nullable = false, precision = 10, scale = 2)
+    private BigDecimal amountTendered;
+
     @Column(nullable = false)
     @Builder.Default
     private Boolean paid = true;

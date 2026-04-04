@@ -24,6 +24,8 @@ public class SaleResponseDto {
     private BigDecimal subtotal;
     private BigDecimal discountAmount;
     private BigDecimal total;
+    private BigDecimal amountTendered;
+    private BigDecimal changeDue;
     private boolean paid;
     private String notes;
 }

@@ -87,6 +87,10 @@ public class SaleServiceImpl implements SaleService {
         saleCreateDto.setSubtotal(saleSubtotal);
         saleCreateDto.setTotal(saleTotal);
 
+        if (saleCreateDto.getAmountTendered().compareTo(saleTotal) < 0) {
+            throw new RuntimeException("The amount tendered must be greater than or equal to the total");
+        }
+
         Sale sale = saleMapper.toEntity(saleCreateDto, employee, customer, paymentMethod);
         Sale savedSale = saleRepository.save(sale);
 
