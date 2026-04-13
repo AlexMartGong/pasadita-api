@@ -1,5 +1,6 @@
 package com.pasadita.api.dto.deliveryorder;
 
+import com.pasadita.api.enums.delivery.DeliveryStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,4 +22,5 @@ public class DeliveryOrderResponseDto {
     private String contactPhone;
     private boolean paid;
     private BigDecimal total;
+    private DeliveryStatus status;
 }

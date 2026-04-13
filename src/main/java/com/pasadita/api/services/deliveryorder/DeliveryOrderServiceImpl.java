@@ -9,6 +9,7 @@ import com.pasadita.api.dto.deliveryorder.DeliveryOrderUpdateDto;
 import com.pasadita.api.entities.DeliveryOrder;
 import com.pasadita.api.entities.Employee;
 import com.pasadita.api.entities.Sale;
+import com.pasadita.api.enums.delivery.DeliveryStatus;
 import com.pasadita.api.repositories.DeliveryOrderRepository;
 import com.pasadita.api.repositories.EmployeeRepository;
 import com.pasadita.api.repositories.SaleRepository;
@@ -87,9 +88,16 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
     }
 
     @Override
+    @Transactional
     public Optional<DeliveryOrderResponseDto> changeStatus(Long id, DeliveryOrderChangeStatusDto deliveryOrderChangeStatusDto) {
         DeliveryOrder deliveryOrder = deliveryOrderRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Delivery order not found with id: " + id));
+
+        if (deliveryOrderChangeStatusDto.getStatus() == DeliveryStatus.CANCELADO && deliveryOrder.getSale() != null) {
+            Sale sale = deliveryOrder.getSale();
+            sale.setPaid(false);
+            saleRepository.save(sale);
+        }
 
         deliveryOrder.setStatus(deliveryOrderChangeStatusDto.getStatus());
         DeliveryOrder updatedDeliveryOrder = deliveryOrderRepository.save(deliveryOrder);

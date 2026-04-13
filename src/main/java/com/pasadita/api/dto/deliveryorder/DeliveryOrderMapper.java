@@ -52,6 +52,7 @@ public class DeliveryOrderMapper {
                 .contactPhone(deliveryOrder.getContactPhone())
                 .paid(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getPaid() : false)
                 .total(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getTotal() : null)
+                .status(deliveryOrder.getStatus())
                 .build();
     }
 }
