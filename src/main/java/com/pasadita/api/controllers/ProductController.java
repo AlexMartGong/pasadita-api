@@ -8,31 +8,27 @@ import com.pasadita.api.dto.product.ProductUpdatePriceDto;
 import com.pasadita.api.services.product.ProductService;
 import com.pasadita.api.utils.ValidationUtils;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/products")
+@RequiredArgsConstructor
 public class ProductController {
 
     private final ProductService productService;
 
-    public ProductController(ProductService productService) {
-        this.productService = productService;
-    }
-
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/all")
     public ResponseEntity<List<ProductResponseDto>> getAllProducts() {
-        List<ProductResponseDto> products = productService.findAll();
-        return ResponseEntity.ok(products);
+        return ResponseEntity.ok(productService.findAll());
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
@@ -50,16 +46,7 @@ public class ProductController {
             return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
         }
 
-        try {
-            ProductResponseDto savedProduct = productService.save(productDto)
-                    .orElseThrow(() -> new RuntimeException("Error saving the product"));
-
-            return ResponseEntity.status(HttpStatus.CREATED).body(savedProduct);
-        } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "Error saving the product: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
-        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(productService.save(productDto));
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
@@ -69,16 +56,7 @@ public class ProductController {
             return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
         }
 
-        try {
-            ProductResponseDto updatedProduct = productService.update(id, productUpdateDto)
-                    .orElseThrow(() -> new RuntimeException("Error updating the product"));
-
-            return ResponseEntity.ok(updatedProduct);
-        } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "Error updating the product: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
-        }
+        return ResponseEntity.ok(productService.update(id, productUpdateDto));
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
@@ -88,45 +66,14 @@ public class ProductController {
             return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
         }
 
-        if (productService.findById(id).isEmpty()) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "Product not found");
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
-        }
-
-        try {
-            productService.updatePriceById(id, productUpdatePriceDto);
-            Map<String, String> response = new HashMap<>();
-            response.put("message", "The product price has been updated successfully");
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "Error updating the product price: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
-        }
+        productService.updatePriceById(id, productUpdatePriceDto);
+        return ResponseEntity.ok(Map.of("message", "The product price has been updated successfully"));
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @PutMapping("/change-status/{id}")
     public ResponseEntity<?> changeProductStatus(@PathVariable Long id, @RequestBody ProductChangeStatusDto status) {
-        if (productService.findById(id).isEmpty()) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "Product not found");
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
-        }
-
-        try {
-            productService.changeStatus(id, status)
-                    .orElseThrow(() -> new RuntimeException("Error changing the product status"));
-
-            Map<String, String> response = new HashMap<>();
-            response.put("message", "The product status has been changed successfully");
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "Error changing the product status: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
-        }
-
+        productService.changeStatus(id, status);
+        return ResponseEntity.ok(Map.of("message", "The product status has been changed successfully"));
     }
 }

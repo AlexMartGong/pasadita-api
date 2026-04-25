@@ -4,31 +4,27 @@ import com.pasadita.api.dto.employee.*;
 import com.pasadita.api.services.employee.EmployeeService;
 import com.pasadita.api.utils.ValidationUtils;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/employees")
+@RequiredArgsConstructor
 public class EmployeeController {
 
     private final EmployeeService employeeService;
 
-    public EmployeeController(EmployeeService employeeService) {
-        this.employeeService = employeeService;
-    }
-
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/all")
     public ResponseEntity<List<EmployeeResponseDto>> getAllEmployees() {
-        List<EmployeeResponseDto> employees = employeeService.findAll();
-        return ResponseEntity.ok(employees);
+        return ResponseEntity.ok(employeeService.findAll());
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
@@ -46,16 +42,7 @@ public class EmployeeController {
             return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
         }
 
-        try {
-            EmployeeResponseDto savedEmployee = employeeService.save(employeeDto)
-                    .orElseThrow(() -> new RuntimeException("Error al guardar el empleado"));
-
-            return ResponseEntity.status(HttpStatus.CREATED).body(savedEmployee);
-        } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "Error al guardar el empleado: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
-        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(employeeService.save(employeeDto));
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
@@ -90,16 +77,8 @@ public class EmployeeController {
             return ResponseEntity.notFound().build();
         }
 
-        try {
-            employeeService.deleteById(id);
-            Map<String, String> response = new HashMap<>();
-            response.put("message", "Empleado eliminado correctamente");
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "Error al eliminar el empleado: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
-        }
+        employeeService.deleteById(id);
+        return ResponseEntity.ok(Map.of("message", "Empleado eliminado correctamente"));
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
@@ -122,11 +101,7 @@ public class EmployeeController {
         }
 
         return employeeService.changePassword(id, passwordDto)
-                .map(updatedEmployee -> {
-                    Map<String, String> response = new HashMap<>();
-                    response.put("message", "Contraseña actualizada correctamente");
-                    return ResponseEntity.ok(response);
-                })
+                .map(updatedEmployee -> ResponseEntity.ok(Map.of("message", "Contraseña actualizada correctamente")))
                 .orElse(ResponseEntity.notFound().build());
     }
 
@@ -138,12 +113,9 @@ public class EmployeeController {
         }
 
         return employeeService.changeStatus(id, statusDto)
-                .map(updatedEmployee -> {
-                    Map<String, Object> response = new HashMap<>();
-                    response.put("message", "Estado actualizado correctamente");
-                    response.put("active", updatedEmployee.isActive());
-                    return ResponseEntity.ok(response);
-                })
+                .map(updatedEmployee -> ResponseEntity.ok(Map.of(
+                        "message", "Estado actualizado correctamente",
+                        "active", updatedEmployee.isActive())))
                 .orElse(ResponseEntity.notFound().build());
     }
 }
