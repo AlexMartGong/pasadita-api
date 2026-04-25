@@ -18,6 +18,8 @@ import com.pasadita.api.repositories.ProductRepository;
 import com.pasadita.api.repositories.SaleRepository;
 import com.pasadita.api.repositories.SaleDetailRepository;
 import com.pasadita.api.services.saledetail.SaleDetailService;
+import com.pasadita.api.exceptions.BusinessRuleException;
+import com.pasadita.api.exceptions.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,7 +64,7 @@ public class SaleServiceImpl implements SaleService {
 
         for (var detailDto : saleCreateDto.getSaleDetails()) {
             Product product = productRepository.findById(detailDto.getProductId())
-                    .orElseThrow(() -> new RuntimeException("Product not found with id: " + detailDto.getProductId()));
+                    .orElseThrow(() -> new EntityNotFoundException("Product not found with id: " + detailDto.getProductId()));
 
             BigDecimal unitPrice = product.getPrice();
             BigDecimal detailSubtotal = detailDto.getQuantity()
@@ -88,7 +90,7 @@ public class SaleServiceImpl implements SaleService {
         saleCreateDto.setTotal(saleTotal);
 
         if (saleCreateDto.getAmountTendered().compareTo(saleTotal) < 0) {
-            throw new RuntimeException("The amount tendered must be greater than or equal to the total");
+            throw new BusinessRuleException("The amount tendered must be greater than or equal to the total");
         }
 
         Sale sale = saleMapper.toEntity(saleCreateDto, employee, customer, paymentMethod);
@@ -112,7 +114,7 @@ public class SaleServiceImpl implements SaleService {
     @Override
     public Optional<SaleResponseDto> update(Long id, SaleUpdateDto saleUpdateDto) {
         Sale existingSale = saleRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Sale not found with id: " + id));
+                .orElseThrow(() -> new EntityNotFoundException("Sale not found with id: " + id));
 
         Employee employee = findEmployeeById(saleUpdateDto.getEmployeeId());
         Customer customer = findCustomerById(saleUpdateDto.getCustomerId());
@@ -157,13 +159,13 @@ public class SaleServiceImpl implements SaleService {
 
     private Employee findEmployeeById(Long employeeId) {
         return employeeRepository.findById(employeeId)
-                .orElseThrow(() -> new RuntimeException("Employee not found with id: " + employeeId));
+                .orElseThrow(() -> new EntityNotFoundException("Employee not found with id: " + employeeId));
     }
 
     @Override
     public Optional<SaleResponseDto> changeStatus(Long id, SaleChangeStatusDto changeStatusDto) {
         Sale sale = saleRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Sale not found with id: " + id));
+                .orElseThrow(() -> new EntityNotFoundException("Sale not found with id: " + id));
 
         sale.setPaid(changeStatusDto.getPaid());
         Sale updatedSale = saleRepository.save(sale);
@@ -173,12 +175,12 @@ public class SaleServiceImpl implements SaleService {
 
     private Customer findCustomerById(Long customerId) {
         return customerRepository.findById(customerId)
-                .orElseThrow(() -> new RuntimeException("Customer not found with id: " + customerId));
+                .orElseThrow(() -> new EntityNotFoundException("Customer not found with id: " + customerId));
     }
 
     private PaymentMethod findPaymentMethodById(Long paymentMethodId) {
         return paymentMethodRepository.findById(paymentMethodId)
-                .orElseThrow(() -> new RuntimeException("Payment method not found with id: " + paymentMethodId));
+                .orElseThrow(() -> new EntityNotFoundException("Payment method not found with id: " + paymentMethodId));
     }
 
     @Override

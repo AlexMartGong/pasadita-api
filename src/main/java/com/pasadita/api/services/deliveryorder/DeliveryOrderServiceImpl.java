@@ -17,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.pasadita.api.exceptions.EntityNotFoundException;
 import com.pasadita.api.utils.DateTimeUtils;
 
 import java.math.BigDecimal;
@@ -77,7 +78,7 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
     @Override
     public Optional<DeliveryOrderResponseDto> update(Long id, DeliveryOrderUpdateDto deliveryOrderUpdateDto) {
         DeliveryOrder deliveryOrder = deliveryOrderRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Delivery order not found with id: " + id));
+                .orElseThrow(() -> new EntityNotFoundException("Delivery order not found with id: " + id));
 
         Employee deliveryEmployee = findEmployeeById(deliveryOrderUpdateDto.getDeliveryEmployeeId());
 
@@ -91,7 +92,7 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
     @Transactional
     public Optional<DeliveryOrderResponseDto> changeStatus(Long id, DeliveryOrderChangeStatusDto deliveryOrderChangeStatusDto) {
         DeliveryOrder deliveryOrder = deliveryOrderRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Delivery order not found with id: " + id));
+                .orElseThrow(() -> new EntityNotFoundException("Delivery order not found with id: " + id));
 
         if (deliveryOrderChangeStatusDto.getStatus() == DeliveryStatus.CANCELADO && deliveryOrder.getSale() != null) {
             Sale sale = deliveryOrder.getSale();
@@ -107,11 +108,11 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
 
     private Sale findSaleById(Long saleId) {
         return saleRepository.findById(saleId)
-                .orElseThrow(() -> new RuntimeException("Sale not found with id: " + saleId));
+                .orElseThrow(() -> new EntityNotFoundException("Sale not found with id: " + saleId));
     }
 
     private Employee findEmployeeById(Long employeeId) {
         return employeeRepository.findById(employeeId)
-                .orElseThrow(() -> new RuntimeException("Employee not found with id: " + employeeId));
+                .orElseThrow(() -> new EntityNotFoundException("Employee not found with id: " + employeeId));
     }
 }

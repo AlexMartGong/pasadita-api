@@ -5,6 +5,7 @@ import com.pasadita.api.entities.Customer;
 import com.pasadita.api.entities.CustomerType;
 import com.pasadita.api.repositories.CustomerRepository;
 import com.pasadita.api.repositories.CustomerTypeRepository;
+import com.pasadita.api.exceptions.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,12 +34,9 @@ public class CustomerServiceImpl implements CustomerService {
     @Override
     @Transactional
     public Optional<CustomerResponseDto> save(CustomerCreateDto customerCreateDto) {
-        Optional<CustomerType> customerTypeOpt = customerTypeRepository.findById(customerCreateDto.getCustomerTypeId());
-        if (customerTypeOpt.isEmpty()) {
-            return Optional.empty();
-        }
-
-        Customer customer = customerMapper.toEntity(customerCreateDto, customerTypeOpt.get());
+        CustomerType customerType = customerTypeRepository.findById(customerCreateDto.getCustomerTypeId())
+                .orElseThrow(() -> new EntityNotFoundException("Customer type not found with id: " + customerCreateDto.getCustomerTypeId()));
+        Customer customer = customerMapper.toEntity(customerCreateDto, customerType);
         Customer savedCustomer = customerRepository.save(customer);
         return Optional.of(customerMapper.toResponseDto(savedCustomer));
     }
@@ -46,23 +44,22 @@ public class CustomerServiceImpl implements CustomerService {
     @Override
     @Transactional
     public Optional<CustomerResponseDto> update(Long id, CustomerUpdateDto customerUpdateDto) {
-        Optional<CustomerType> customerTypeOpt = customerTypeRepository.findById(customerUpdateDto.getCustomerTypeId());
-        return customerTypeOpt.flatMap(customerType -> customerRepository.findById(id)
-                .map(existingCustomer -> {
-                    customerMapper.updateEntity(existingCustomer, customerUpdateDto, customerType);
-                    Customer savedCustomer = customerRepository.save(existingCustomer);
-                    return customerMapper.toResponseDto(savedCustomer);
-                }));
+        CustomerType customerType = customerTypeRepository.findById(customerUpdateDto.getCustomerTypeId())
+                .orElseThrow(() -> new EntityNotFoundException("Customer type not found with id: " + customerUpdateDto.getCustomerTypeId()));
+        Customer existingCustomer = customerRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Customer not found with id: " + id));
+        customerMapper.updateEntity(existingCustomer, customerUpdateDto, customerType);
+        Customer savedCustomer = customerRepository.save(existingCustomer);
+        return Optional.of(customerMapper.toResponseDto(savedCustomer));
     }
 
     @Override
     @Transactional
     public Optional<CustomerResponseDto> changeStatus(Long id, CustomerChangeStatusDto customerChangeStatusDto) {
-        return customerRepository.findById(id)
-                .map(existingCustomer -> {
-                    customerMapper.updateStatus(existingCustomer, customerChangeStatusDto);
-                    Customer savedCustomer = customerRepository.save(existingCustomer);
-                    return customerMapper.toResponseDto(savedCustomer);
-                });
+        Customer existingCustomer = customerRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Customer not found with id: " + id));
+        customerMapper.updateStatus(existingCustomer, customerChangeStatusDto);
+        Customer savedCustomer = customerRepository.save(existingCustomer);
+        return Optional.of(customerMapper.toResponseDto(savedCustomer));
     }
 }
