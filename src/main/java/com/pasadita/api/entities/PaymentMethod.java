@@ -19,4 +19,7 @@ public class PaymentMethod {
 
     private String name;
     private boolean active;
+
+    @Column(name = "clave_forma_pago_sat", length = 2)
+    private String claveFormaPagoSat;
 }
