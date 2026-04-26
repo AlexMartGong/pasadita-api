@@ -19,5 +19,6 @@ public class ProductResponseDto {
     private Category category;
     private BigDecimal price;
     private UnitMeasure unitMeasure;
+    private String claveProductoSat;
     private boolean active;
 }

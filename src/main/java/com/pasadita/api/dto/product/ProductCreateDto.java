@@ -32,6 +32,10 @@ public class ProductCreateDto {
     @NotNull(message = "La unidad de medida es obligatoria")
     private UnitMeasure unitMeasure;
 
+    @Pattern(regexp = "^\\d{8}$", message = "La clave de producto SAT debe tener exactamente 8 dígitos")
+    @Size(max = 8, message = "La clave de producto SAT no puede exceder 8 caracteres")
+    private String claveProductoSat;
+
     @NotNull(message = "El estado del producto es obligatorio")
     private boolean active;
 }

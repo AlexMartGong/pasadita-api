@@ -58,3 +58,6 @@ package-lock.json
 settings.local.json
 tsconfig.json
 /mcp-server
+
+# Certificados
+/certificados/

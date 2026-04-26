@@ -12,6 +12,7 @@ public class ProductMapper {
                 .category(product.getCategory())
                 .price(product.getPrice())
                 .unitMeasure(product.getUnitMeasure())
+                .claveProductoSat(product.getClaveProductoSat())
                 .active(product.isActive())
                 .build();
     }
@@ -22,6 +23,7 @@ public class ProductMapper {
                 .category(dto.getCategory())
                 .price(dto.getPrice())
                 .unitMeasure(dto.getUnitMeasure())
+                .claveProductoSat(dto.getClaveProductoSat())
                 .active(dto.isActive())
                 .build();
     }
@@ -31,6 +33,7 @@ public class ProductMapper {
         product.setCategory(dto.getCategory());
         product.setPrice(dto.getPrice());
         product.setUnitMeasure(dto.getUnitMeasure());
+        product.setClaveProductoSat(dto.getClaveProductoSat());
         product.setActive(dto.isActive());
     }
 }
