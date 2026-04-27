@@ -130,10 +130,13 @@ com.pasadita.api/
 - Default credentials: root/Root1234 (update in `application.properties` for different environments)
 - Uses Hibernate dialect for MySQL with SQL logging enabled
 - **Production** (`application-prod.properties`): Uses environment variables (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
-  `JWT_SECRET`, `JWT_EXPIRATION`, `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`), Hibernate `ddl-auto=validate`,
-  HikariCP pool (max 10)
+  `JWT_SECRET`, `JWT_EXPIRATION`, `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`, `FACTURAPI_KEY`), Hibernate
+  `ddl-auto=validate`, HikariCP pool (max 10)
 - **Facturación (CFDI)**: `facturacion.emisor.*` (rfc, razon-social, regimen-fiscal, codigo-postal) and
-  `facturacion.csd.*` (cer-path, key-path, password) are bound to `FacturacionProperties` (under `config/`)
+  `facturacion.csd.*` (cer-path, key-path, password) are bound to `FacturacionProperties` (under `config/`).
+  `facturapi.key` (env `FACTURAPI_KEY`) is the Facturapi secret bearer token; `FacturapiConfig` exposes both the
+  `Facturapi` SDK bean and a shared `HttpClient` bean (`facturapiHttpClient`) used for direct REST calls and proxy
+  downloads
 - **Timezone Strategy**: Database stores all dates in UTC (`serverTimezone=UTC` in production)
 - **Date Conversion**: Use `DateTimeUtils` class for timezone handling:
     - `DateTimeUtils.nowUtc()` - Get current time in UTC (for saving to DB)
@@ -244,6 +247,14 @@ Current domains include:
     - Tracks `uuid` (SAT folio), `xmlUrl`, `pdfUrl`, `createdAt`, `timbradoAt`
     - Service rules: sale must be paid, fiscal data must be active, no duplicate active invoice per sale
     - DTOs/services under `dto/invoice/` and `services/invoice/`
+    - **Stamping flow** (`InvoiceServiceImpl.timbrarInvoice`): customer + product creation use the Facturapi Java SDK,
+      but the invoice POST is sent through the JDK `HttpClient` (`POST https://www.facturapi.io/v2/invoices` with
+      `Authorization: Bearer ${facturapi.key}`) and parsed via Jackson `JsonNode`. The SDK 1.2.0 invoice deserializer
+      is incompatible with CFDI 4.0 responses, so it is bypassed for that step
+    - **Endpoints** (`InvoiceController`, all `ROLE_ADMIN`/`ROLE_CAJERO`): `POST /api/invoices` (creates a `PENDIENTE`
+      row), `POST /api/invoices/timbrar` (executes stamping), `GET /api/invoices/sale/{saleId}`,
+      `GET /api/invoices/sale/{saleId}/pdf` and `/xml` (server-side proxy downloads from Facturapi using the bearer
+      secret; require `status == TIMBRADA`)
 - **Ticket**: Read-only DTO for printing sale receipts via WebSocket
 - **Dashboard**: Analytics/reporting domain — read-only stats aggregated over a date range
     - Uses `DashboardRepository` (extends `JpaRepository<Sale, Long>`) with 15 native SQL queries
