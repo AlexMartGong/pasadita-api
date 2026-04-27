@@ -28,6 +28,15 @@ public class InvoiceController {
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PostMapping("/timbrar")
+    public ResponseEntity<?> timbrarInvoice(@Valid @RequestBody InvoiceCreateDto dto, BindingResult result) {
+        if (result.hasErrors()) {
+            return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
+        }
+        return ResponseEntity.ok(invoiceService.timbrarInvoice(dto));
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
     @GetMapping("/sale/{saleId}")
     public ResponseEntity<?> getInvoiceBySaleId(@PathVariable Long saleId) {
         return ResponseEntity.ok(invoiceService.getInvoiceBySaleId(saleId));

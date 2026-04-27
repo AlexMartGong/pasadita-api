@@ -9,5 +9,7 @@ public interface InvoiceService {
 
     Optional<InvoiceResponseDto> createInvoiceRequest(InvoiceCreateDto dto);
 
+    Optional<InvoiceResponseDto> timbrarInvoice(InvoiceCreateDto dto);
+
     Optional<InvoiceResponseDto> getInvoiceBySaleId(Long saleId);
 }
