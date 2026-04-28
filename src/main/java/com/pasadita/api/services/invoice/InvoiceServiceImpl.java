@@ -23,6 +23,8 @@ import io.facturapi.FacturapiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,6 +55,8 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     private static final String FACTURAPI_INVOICES_BASE_URL = "https://www.facturapi.io/v2/invoices";
     private static final String FACTURAPI_INVOICE_URL = FACTURAPI_INVOICES_BASE_URL + "/";
+    private static final String DEFAULT_CANCEL_MOTIVE = "02";
+    private static final String FACTURAPI_INVOICE_PATH_MARKER = "/v2/invoices/";
 
     private final InvoiceRepository invoiceRepository;
     private final SaleRepository saleRepository;
@@ -137,6 +141,74 @@ public class InvoiceServiceImpl implements InvoiceService {
         return Optional.of(invoiceRepository.findBySaleId(saleId)
                 .map(invoiceMapper::toResponseDto)
                 .orElseThrow(() -> new EntityNotFoundException("Invoice not found for sale id: " + saleId)));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<InvoiceResponseDto> listInvoices(Pageable pageable) {
+        return invoiceRepository.findAll(pageable).map(invoiceMapper::toResponseDto);
+    }
+
+    @Override
+    @Transactional
+    public InvoiceResponseDto cancelInvoice(Long invoiceId, String motive) {
+        Invoice invoice = invoiceRepository.findWithDetailsByInvoiceId(invoiceId)
+                .orElseThrow(() -> new EntityNotFoundException("Invoice not found with id: " + invoiceId));
+
+        if (invoice.getStatus() != InvoiceStatus.TIMBRADA) {
+            throw new BusinessRuleException(
+                    "Only TIMBRADA invoices can be cancelled (current status=" + invoice.getStatus() + ")");
+        }
+
+        String facturapiId = extractFacturapiId(invoice);
+        String resolvedMotive = StringUtils.hasText(motive) ? motive : DEFAULT_CANCEL_MOTIVE;
+
+        cancelOnFacturapi(facturapiId, resolvedMotive);
+
+        invoice.setStatus(InvoiceStatus.CANCELADA);
+        Invoice persisted = invoiceRepository.save(invoice);
+        return invoiceMapper.toResponseDto(persisted);
+    }
+
+    private String extractFacturapiId(Invoice invoice) {
+        String url = StringUtils.hasText(invoice.getXmlUrl()) ? invoice.getXmlUrl() : invoice.getPdfUrl();
+        if (!StringUtils.hasText(url)) {
+            throw new BusinessRuleException(
+                    "Invoice " + invoice.getInvoiceId() + " has no Facturapi URL to extract id from");
+        }
+        int start = url.indexOf(FACTURAPI_INVOICE_PATH_MARKER);
+        if (start < 0) {
+            throw new BusinessRuleException("Invoice URL malformed: " + url);
+        }
+        int idStart = start + FACTURAPI_INVOICE_PATH_MARKER.length();
+        int idEnd = url.indexOf('/', idStart);
+        String id = idEnd > idStart ? url.substring(idStart, idEnd) : url.substring(idStart);
+        if (!StringUtils.hasText(id)) {
+            throw new BusinessRuleException("Could not extract Facturapi id from URL: " + url);
+        }
+        return id;
+    }
+
+    private void cancelOnFacturapi(String facturapiId, String motive) {
+        URI uri = URI.create(FACTURAPI_INVOICE_URL + facturapiId + "?motive=" + motive);
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(uri)
+                .header("Authorization", "Bearer " + facturapiSecret)
+                .DELETE()
+                .build();
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            int status = response.statusCode();
+            if (status < 200 || status >= 300) {
+                throw new BusinessRuleException(
+                        "Facturapi rechazó cancelación (HTTP " + status + "): " + response.body());
+            }
+        } catch (IOException ex) {
+            throw new BusinessRuleException("Falla I/O al cancelar CFDI vía Facturapi: " + ex.getMessage());
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new BusinessRuleException("Cancelación CFDI interrumpida");
+        }
     }
 
     private Sale loadAndValidatePaidSale(Long saleId) {

@@ -3,6 +3,7 @@ package com.pasadita.api.services.invoice;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pasadita.api.dto.invoice.InvoiceCreateDto;
 import com.pasadita.api.dto.invoice.InvoiceMapper;
+import com.pasadita.api.dto.invoice.InvoiceResponseDto;
 import com.pasadita.api.entities.CustomerFiscalData;
 import com.pasadita.api.entities.Invoice;
 import com.pasadita.api.entities.PaymentMethod;
@@ -12,6 +13,7 @@ import com.pasadita.api.entities.SaleDetail;
 import com.pasadita.api.enums.invoice.InvoiceStatus;
 import com.pasadita.api.enums.product.UnitMeasure;
 import com.pasadita.api.exceptions.BusinessRuleException;
+import com.pasadita.api.exceptions.EntityNotFoundException;
 import com.pasadita.api.repositories.CustomerFiscalDataRepository;
 import com.pasadita.api.repositories.InvoiceRepository;
 import com.pasadita.api.repositories.SaleRepository;
@@ -25,6 +27,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.net.http.HttpClient;
@@ -265,5 +271,128 @@ class InvoiceServiceImplTest {
 
         verify(invoiceErrorPersister).markAsError(persistedInvoice.getInvoiceId());
         verify(httpClient, never()).send(any(), any());
+    }
+
+    @Test
+    void listInvoices_returnsMappedPage() {
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Invoice> entityPage = new PageImpl<>(List.of(persistedInvoice), pageable, 1);
+        when(invoiceRepository.findAll(pageable)).thenReturn(entityPage);
+
+        InvoiceResponseDto dto = InvoiceResponseDto.builder()
+                .invoiceId(persistedInvoice.getInvoiceId())
+                .status(InvoiceStatus.PENDIENTE.name())
+                .build();
+        when(invoiceMapper.toResponseDto(persistedInvoice)).thenReturn(dto);
+
+        Page<InvoiceResponseDto> result = service.listInvoices(pageable);
+
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getInvoiceId()).isEqualTo(900L);
+        assertThat(result.getContent().get(0).getStatus()).isEqualTo("PENDIENTE");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void cancelInvoice_happyPath_callsFacturapiAndPersistsCancelada() throws Exception {
+        persistedInvoice.setStatus(InvoiceStatus.TIMBRADA);
+        persistedInvoice.setUuid("uuid-123");
+        persistedInvoice.setXmlUrl("https://www.facturapi.io/v2/invoices/inv_abc/xml");
+        persistedInvoice.setPdfUrl("https://www.facturapi.io/v2/invoices/inv_abc/pdf");
+        when(invoiceRepository.findWithDetailsByInvoiceId(900L)).thenReturn(Optional.of(persistedInvoice));
+        when(invoiceRepository.save(any(Invoice.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(invoiceMapper.toResponseDto(any(Invoice.class)))
+                .thenAnswer(inv -> InvoiceResponseDto.builder()
+                        .invoiceId(((Invoice) inv.getArgument(0)).getInvoiceId())
+                        .status(((Invoice) inv.getArgument(0)).getStatus().name())
+                        .build());
+
+        HttpResponse<String> okResponse = (HttpResponse<String>) mock(HttpResponse.class);
+        when(okResponse.statusCode()).thenReturn(200);
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(okResponse);
+
+        InvoiceResponseDto result = service.cancelInvoice(900L, null);
+
+        assertThat(result.getStatus()).isEqualTo("CANCELADA");
+        assertThat(persistedInvoice.getStatus()).isEqualTo(InvoiceStatus.CANCELADA);
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(captor.capture(), any(HttpResponse.BodyHandler.class));
+        HttpRequest sent = captor.getValue();
+        assertThat(sent.uri().toString()).isEqualTo("https://www.facturapi.io/v2/invoices/inv_abc?motive=02");
+        assertThat(sent.method()).isEqualTo("DELETE");
+        assertThat(sent.headers().firstValue("Authorization")).contains("Bearer test-secret");
+        verify(invoiceRepository).save(persistedInvoice);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void cancelInvoice_explicitMotive_passedAsQueryParam() throws Exception {
+        persistedInvoice.setStatus(InvoiceStatus.TIMBRADA);
+        persistedInvoice.setXmlUrl("https://www.facturapi.io/v2/invoices/inv_xyz/xml");
+        when(invoiceRepository.findWithDetailsByInvoiceId(900L)).thenReturn(Optional.of(persistedInvoice));
+        when(invoiceRepository.save(any(Invoice.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(invoiceMapper.toResponseDto(any(Invoice.class)))
+                .thenReturn(InvoiceResponseDto.builder().status("CANCELADA").build());
+
+        HttpResponse<String> okResponse = (HttpResponse<String>) mock(HttpResponse.class);
+        when(okResponse.statusCode()).thenReturn(200);
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(okResponse);
+
+        service.cancelInvoice(900L, "01");
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(captor.capture(), any(HttpResponse.BodyHandler.class));
+        assertThat(captor.getValue().uri().toString())
+                .isEqualTo("https://www.facturapi.io/v2/invoices/inv_xyz?motive=01");
+    }
+
+    @Test
+    void cancelInvoice_invoiceNotFound_throwsEntityNotFound() throws Exception {
+        when(invoiceRepository.findWithDetailsByInvoiceId(900L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.cancelInvoice(900L, "02"))
+                .isInstanceOf(EntityNotFoundException.class)
+                .hasMessageContaining("Invoice not found");
+
+        verify(httpClient, never()).send(any(), any());
+        verify(invoiceRepository, never()).save(any());
+    }
+
+    @Test
+    void cancelInvoice_notTimbrada_throwsBusinessRule() throws Exception {
+        persistedInvoice.setStatus(InvoiceStatus.PENDIENTE);
+        when(invoiceRepository.findWithDetailsByInvoiceId(900L)).thenReturn(Optional.of(persistedInvoice));
+
+        assertThatThrownBy(() -> service.cancelInvoice(900L, "02"))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("TIMBRADA");
+
+        verify(httpClient, never()).send(any(), any());
+        verify(invoiceRepository, never()).save(any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void cancelInvoice_facturapiRejects_throwsBusinessRule_andLeavesStatusUnchanged() throws Exception {
+        persistedInvoice.setStatus(InvoiceStatus.TIMBRADA);
+        persistedInvoice.setXmlUrl("https://www.facturapi.io/v2/invoices/inv_abc/xml");
+        when(invoiceRepository.findWithDetailsByInvoiceId(900L)).thenReturn(Optional.of(persistedInvoice));
+
+        HttpResponse<String> badResponse = (HttpResponse<String>) mock(HttpResponse.class);
+        when(badResponse.statusCode()).thenReturn(400);
+        when(badResponse.body()).thenReturn("{\"message\":\"already cancelled\"}");
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(badResponse);
+
+        assertThatThrownBy(() -> service.cancelInvoice(900L, "02"))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("Facturapi rechazó cancelación");
+
+        assertThat(persistedInvoice.getStatus()).isEqualTo(InvoiceStatus.TIMBRADA);
+        verify(invoiceRepository, never()).save(any());
     }
 }
