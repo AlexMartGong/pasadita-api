@@ -29,6 +29,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/invoices")
@@ -104,6 +105,15 @@ public class InvoiceController {
                 invoice.getXmlUrl(),
                 MediaType.APPLICATION_XML,
                 "factura_venta_" + saleId + ".xml");
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PostMapping("/sale/{saleId}/email")
+    public ResponseEntity<Map<String, String>> sendInvoiceEmail(
+            @PathVariable Long saleId,
+            @RequestParam("email") String email) {
+        invoiceService.sendInvoiceEmail(saleId, email);
+        return ResponseEntity.ok(Map.of("message", "Correo enviado exitosamente"));
     }
 
     private InvoiceResponseDto requireStampedInvoice(Long saleId) {

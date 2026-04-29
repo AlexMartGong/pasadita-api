@@ -377,6 +377,80 @@ class InvoiceServiceImplTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void sendInvoiceEmail_happyPath_postsToFacturapi() throws Exception {
+        persistedInvoice.setStatus(InvoiceStatus.TIMBRADA);
+        persistedInvoice.setXmlUrl("https://www.facturapi.io/v2/invoices/inv_abc/xml");
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.of(persistedInvoice));
+
+        HttpResponse<String> okResponse = (HttpResponse<String>) mock(HttpResponse.class);
+        when(okResponse.statusCode()).thenReturn(200);
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(okResponse);
+
+        service.sendInvoiceEmail(sale.getId(), "cliente@x.com");
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(captor.capture(), any(HttpResponse.BodyHandler.class));
+        HttpRequest sent = captor.getValue();
+        assertThat(sent.uri().toString()).isEqualTo("https://www.facturapi.io/v2/invoices/inv_abc/email");
+        assertThat(sent.method()).isEqualTo("POST");
+        assertThat(sent.headers().firstValue("Authorization")).contains("Bearer test-secret");
+        assertThat(sent.headers().firstValue("Content-Type")).contains("application/json");
+    }
+
+    @Test
+    void sendInvoiceEmail_invoiceNotFound_throwsEntityNotFound() throws Exception {
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.sendInvoiceEmail(sale.getId(), "cliente@x.com"))
+                .isInstanceOf(EntityNotFoundException.class)
+                .hasMessageContaining("Invoice not found for sale id");
+
+        verify(httpClient, never()).send(any(), any());
+    }
+
+    @Test
+    void sendInvoiceEmail_notTimbrada_throwsBusinessRule() throws Exception {
+        persistedInvoice.setStatus(InvoiceStatus.PENDIENTE);
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.of(persistedInvoice));
+
+        assertThatThrownBy(() -> service.sendInvoiceEmail(sale.getId(), "cliente@x.com"))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("non-stamped");
+
+        verify(httpClient, never()).send(any(), any());
+    }
+
+    @Test
+    void sendInvoiceEmail_blankEmail_throwsBusinessRule() throws Exception {
+        assertThatThrownBy(() -> service.sendInvoiceEmail(sale.getId(), ""))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("Target email");
+
+        verify(invoiceRepository, never()).findBySaleId(any());
+        verify(httpClient, never()).send(any(), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void sendInvoiceEmail_facturapiRejects_throwsBusinessRule() throws Exception {
+        persistedInvoice.setStatus(InvoiceStatus.TIMBRADA);
+        persistedInvoice.setXmlUrl("https://www.facturapi.io/v2/invoices/inv_abc/xml");
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.of(persistedInvoice));
+
+        HttpResponse<String> badResponse = (HttpResponse<String>) mock(HttpResponse.class);
+        when(badResponse.statusCode()).thenReturn(400);
+        when(badResponse.body()).thenReturn("{\"message\":\"invalid email\"}");
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(badResponse);
+
+        assertThatThrownBy(() -> service.sendInvoiceEmail(sale.getId(), "cliente@x.com"))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("Facturapi rechazó envío");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void cancelInvoice_facturapiRejects_throwsBusinessRule_andLeavesStatusUnchanged() throws Exception {
         persistedInvoice.setStatus(InvoiceStatus.TIMBRADA);
         persistedInvoice.setXmlUrl("https://www.facturapi.io/v2/invoices/inv_abc/xml");

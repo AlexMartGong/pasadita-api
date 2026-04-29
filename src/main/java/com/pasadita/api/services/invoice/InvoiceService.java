@@ -18,4 +18,6 @@ public interface InvoiceService {
     Page<InvoiceResponseDto> listInvoices(Pageable pageable);
 
     InvoiceResponseDto cancelInvoice(Long invoiceId, String motive);
+
+    void sendInvoiceEmail(Long saleId, String targetEmail);
 }

@@ -57,6 +57,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private static final String FACTURAPI_INVOICE_URL = FACTURAPI_INVOICES_BASE_URL + "/";
     private static final String DEFAULT_CANCEL_MOTIVE = "02";
     private static final String FACTURAPI_INVOICE_PATH_MARKER = "/v2/invoices/";
+    private static final String FACTURAPI_EMAIL_PATH_SUFFIX = "/email";
 
     private final InvoiceRepository invoiceRepository;
     private final SaleRepository saleRepository;
@@ -168,6 +169,45 @@ public class InvoiceServiceImpl implements InvoiceService {
         invoice.setStatus(InvoiceStatus.CANCELADA);
         Invoice persisted = invoiceRepository.save(invoice);
         return invoiceMapper.toResponseDto(persisted);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public void sendInvoiceEmail(Long saleId, String targetEmail) {
+        if (!StringUtils.hasText(targetEmail)) {
+            throw new BusinessRuleException("Target email is required");
+        }
+        Invoice invoice = invoiceRepository.findBySaleId(saleId)
+                .orElseThrow(() -> new EntityNotFoundException("Invoice not found for sale id: " + saleId));
+        if (invoice.getStatus() != InvoiceStatus.TIMBRADA) {
+            throw new BusinessRuleException(
+                    "Cannot send email for non-stamped invoice (status=" + invoice.getStatus() + ")");
+        }
+        String facturapiId = extractFacturapiId(invoice);
+        sendEmailOnFacturapi(facturapiId, targetEmail);
+    }
+
+    private void sendEmailOnFacturapi(String facturapiId, String targetEmail) {
+        try {
+            String body = objectMapper.writeValueAsString(Map.of("email", targetEmail));
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(FACTURAPI_INVOICE_URL + facturapiId + FACTURAPI_EMAIL_PATH_SUFFIX))
+                    .header("Authorization", "Bearer " + facturapiSecret)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            int status = response.statusCode();
+            if (status < 200 || status >= 300) {
+                throw new BusinessRuleException(
+                        "Facturapi rechazó envío de correo (HTTP " + status + "): " + response.body());
+            }
+        } catch (IOException ex) {
+            throw new BusinessRuleException("Falla I/O al enviar correo CFDI vía Facturapi: " + ex.getMessage());
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new BusinessRuleException("Envío de correo CFDI interrumpido");
+        }
     }
 
     private String extractFacturapiId(Invoice invoice) {
