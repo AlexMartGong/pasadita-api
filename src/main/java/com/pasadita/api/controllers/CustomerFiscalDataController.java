@@ -22,25 +22,25 @@ public class CustomerFiscalDataController {
 
     private final CustomerFiscalDataService service;
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/all")
     public ResponseEntity<List<CustomerFiscalDataResponseDto>> getAll() {
         return ResponseEntity.ok(service.findAll());
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/{id}")
     public ResponseEntity<?> getById(@PathVariable Long id) {
         return ResponseEntity.ok(service.findById(id));
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/by-rfc/{rfc}")
     public ResponseEntity<?> getByRfc(@PathVariable String rfc) {
         return ResponseEntity.ok(service.findByRfc(rfc));
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @PostMapping("/save")
     public ResponseEntity<?> save(@Valid @RequestBody CustomerFiscalDataCreateDto dto, BindingResult result) {
         if (result.hasErrors()) {
@@ -49,7 +49,7 @@ public class CustomerFiscalDataController {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.save(dto));
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @PutMapping("/update/{id}")
     public ResponseEntity<?> update(@PathVariable Long id,
                                     @Valid @RequestBody CustomerFiscalDataUpdateDto dto,

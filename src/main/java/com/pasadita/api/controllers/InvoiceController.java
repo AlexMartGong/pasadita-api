@@ -49,7 +49,7 @@ public class InvoiceController {
         this.facturapiSecret = facturapiSecret;
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @PostMapping
     public ResponseEntity<?> createInvoiceRequest(@Valid @RequestBody InvoiceCreateDto dto, BindingResult result) {
         if (result.hasErrors()) {
@@ -58,13 +58,13 @@ public class InvoiceController {
         return ResponseEntity.status(HttpStatus.CREATED).body(invoiceService.createInvoiceRequest(dto));
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping
     public ResponseEntity<Page<InvoiceResponseDto>> listInvoices(Pageable pageable) {
         return ResponseEntity.ok(invoiceService.listInvoices(pageable));
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
     @DeleteMapping("/{invoiceId}")
     public ResponseEntity<InvoiceResponseDto> cancelInvoice(
             @PathVariable Long invoiceId,
@@ -72,7 +72,7 @@ public class InvoiceController {
         return ResponseEntity.ok(invoiceService.cancelInvoice(invoiceId, motive));
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @PostMapping("/timbrar")
     public ResponseEntity<?> timbrarInvoice(@Valid @RequestBody InvoiceCreateDto dto, BindingResult result) {
         if (result.hasErrors()) {
@@ -81,13 +81,13 @@ public class InvoiceController {
         return ResponseEntity.ok(invoiceService.timbrarInvoice(dto));
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/sale/{saleId}")
     public ResponseEntity<?> getInvoiceBySaleId(@PathVariable Long saleId) {
         return ResponseEntity.ok(invoiceService.getInvoiceBySaleId(saleId));
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/sale/{saleId}/pdf")
     public ResponseEntity<byte[]> downloadInvoicePdf(@PathVariable Long saleId) {
         InvoiceResponseDto invoice = requireStampedInvoice(saleId);
@@ -97,7 +97,7 @@ public class InvoiceController {
                 "factura_venta_" + saleId + ".pdf");
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/sale/{saleId}/xml")
     public ResponseEntity<byte[]> downloadInvoiceXml(@PathVariable Long saleId) {
         InvoiceResponseDto invoice = requireStampedInvoice(saleId);
@@ -107,7 +107,7 @@ public class InvoiceController {
                 "factura_venta_" + saleId + ".xml");
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @PostMapping("/sale/{saleId}/email")
     public ResponseEntity<Map<String, String>> sendInvoiceEmail(
             @PathVariable Long saleId,
