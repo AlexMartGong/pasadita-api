@@ -33,5 +33,8 @@ public class Product {
     @Enumerated(EnumType.STRING)
     private UnitMeasure unitMeasure;
 
+    @Column(name = "clave_producto_sat", length = 8)
+    private String claveProductoSat;
+
     private boolean active;
 }

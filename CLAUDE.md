@@ -94,10 +94,12 @@ The application follows a standard layered architecture:
 ### Data Model Patterns
 
 - Entities use Lombok annotations (`@Data`, `@Builder`, `@NoArgsConstructor`, `@AllArgsConstructor`)
-- Enums for categorization (`Category`, `UnitMeasure`, `Position`, `DeliveryStatus`)
+- Enums for categorization (`Category`, `UnitMeasure`, `Position`, `DeliveryStatus`, `InvoiceStatus`)
 - Custom validation annotations (`@ExistsEmployee`)
 - Separate DTOs for Create, Update, Response, and specific operations (ChangePassword, ChangeStatus)
 - Dedicated mapper classes for entity-DTO conversion
+- **Schema source of truth**: `src/main/resources/scriptLP.sql` is the canonical MySQL DDL. Keep entities aligned (
+  column names, nullability, length, indexes) so production `ddl-auto=validate` passes.
 
 ## Development Guidelines
 
@@ -105,18 +107,21 @@ The application follows a standard layered architecture:
 
 ```
 com.pasadita.api/
-├── config/           # WebSocket configuration, handlers, and CORS config
+├── config/           # WebSocket, CORS, and @ConfigurationProperties (e.g., FacturacionProperties)
 ├── controllers/      # REST endpoints by domain
-├── dto/              # DTOs organized by domain (customer, employee, product, sale, ticket, etc.)
+├── dto/              # DTOs organized by domain (customer, employee, product, sale, saledetail, deliveryorder, dashboard, ticket, fiscal, invoice)
 ├── entities/         # JPA entities
-├── enums/            # Enums organized by category (product, user, delivery)
+├── enums/            # Enums organized by category (product, user, delivery, invoice)
 ├── exceptions/       # Custom exceptions
 ├── repositories/     # Spring Data JPA repositories
 ├── security/         # Security configuration and JWT filters
-├── services/         # Business logic (interface + implementation pattern by domain)
+├── services/         # Business logic (interface + implementation pattern by domain — includes fiscal, invoice)
 ├── utils/            # Common utilities (DateTimeUtils, ValidationUtils)
 └── validation/       # Custom validation annotations and validators
 ```
+
+`PasaditaApiApplication` declares `@ConfigurationPropertiesScan("com.pasadita.api.config")` — any new
+`@ConfigurationProperties` class must live under that package to be picked up.
 
 ### Database Configuration
 
@@ -125,10 +130,17 @@ com.pasadita.api/
 - Default credentials: root/Root1234 (update in `application.properties` for different environments)
 - Uses Hibernate dialect for MySQL with SQL logging enabled
 - **Production** (`application-prod.properties`): Uses environment variables (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
-  `JWT_SECRET`, `JWT_EXPIRATION`), Hibernate `ddl-auto=validate`, HikariCP pool (max 10)
+  `JWT_SECRET`, `JWT_EXPIRATION`, `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`, `FACTURAPI_KEY`), Hibernate
+  `ddl-auto=validate`, HikariCP pool (max 10)
+- **Facturación (CFDI)**: `facturacion.emisor.*` (rfc, razon-social, regimen-fiscal, codigo-postal) and
+  `facturacion.csd.*` (cer-path, key-path, password) are bound to `FacturacionProperties` (under `config/`).
+  `facturapi.key` (env `FACTURAPI_KEY`) is the Facturapi secret bearer token; `FacturapiConfig` exposes both the
+  `Facturapi` SDK bean and a shared `HttpClient` bean (`facturapiHttpClient`) used for direct REST calls and proxy
+  downloads
 - **Timezone Strategy**: Database stores all dates in UTC (`serverTimezone=UTC` in production)
 - **Date Conversion**: Use `DateTimeUtils` class for timezone handling:
     - `DateTimeUtils.nowUtc()` - Get current time in UTC (for saving to DB)
+    - `DateTimeUtils.nowMexico()` - Get current time in Mexico timezone (for default date range logic)
     - `DateTimeUtils.toMexicoTime(datetime)` - Convert UTC to Mexico time (for API responses)
     - `DateTimeUtils.toUtc(datetime)` - Convert Mexico time to UTC (for user input)
 
@@ -170,6 +182,20 @@ Each domain has a dedicated mapper class (e.g., `EmployeeMapper`, `CustomerMappe
 - Return appropriate HTTP status codes (200 OK, 201 CREATED, 404 NOT_FOUND, etc.)
 - Use `Optional` for nullable responses
 
+### Exception Handling
+
+Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
+
+| Exception                   | HTTP Status        | Usage                                                                          |
+|-----------------------------|--------------------|--------------------------------------------------------------------------------|
+| `EntityNotFoundException`   | 404 NOT_FOUND      | Entity lookup fails (throw from service)                                       |
+| `BusinessRuleException`     | 400 BAD_REQUEST    | Domain rule violation (e.g., cancel already-delivered order)                   |
+| `EmployeeInactiveException` | 401 (auth failure) | Extends `AuthenticationException`; thrown during login if employee is inactive |
+| `Exception` (catch-all)     | 500                | Logged via SLF4J, returns generic message                                      |
+
+- Always throw `EntityNotFoundException` or `BusinessRuleException` from services — never return null or handle HTTP
+  status in the service layer.
+
 ### Repository Pattern
 
 - All repositories extend `CrudRepository<Entity, Long>` or `JpaRepository<Entity, Long>`
@@ -177,6 +203,8 @@ Each domain has a dedicated mapper class (e.g., `EmployeeMapper`, `CustomerMappe
 - Use `@EntityGraph` to optimize fetching and avoid N+1 queries (e.g.,
   `@EntityGraph(attributePaths = {"sale", "product"})`)
 - Use `@Modifying` + `@Query` for custom update operations (e.g., `updatePriceById`)
+- Use `@Query(nativeQuery = true, value = "...")` for complex analytics (e.g., `DashboardRepository` — 15 native queries
+  with date range params)
 - Repositories are organized by domain with corresponding entities
 
 ### Testing Approach
@@ -194,19 +222,47 @@ Current domains include:
 - **Customer**: Customer management with customer types
 - **CustomerType**: Customer categorization
 - **Product**: Inventory with categories and unit measures
+    - `claveProductoSat` (varchar 8) — SAT product/service code, optional, used for CFDI invoicing
 - **Sale**: Sales transactions with payment methods and sale details
-    - Relationships: ManyToOne with Employee, Customer (optional), PaymentMethod
+    - Relationships: ManyToOne with Employee, **Customer (mandatory, NOT NULL)**, PaymentMethod
     - OneToMany with SaleDetail
-    - Tracks subtotal, discount, total, paid status, and notes
+    - Tracks subtotal, discount, total, paid status, notes, `amountTendered`; `changeDue` is computed in mappers
 - **SaleDetail**: Line items for sales
     - ManyToOne relationships with Sale and Product
-    - Tracks quantity, unit price, and subtotal
+    - Tracks quantity, unit price, subtotal, discount, and total
 - **PaymentMethod**: Payment method catalog (cash, card, etc.)
+    - `claveFormaPagoSat` (varchar 2) — SAT forma de pago code (e.g. `01` cash, `04` card). No CRUD layer; managed via
+      SQL/seed
 - **DeliveryOrder**: Delivery management with status tracking
     - OneToOne relationship with Sale
     - ManyToOne with Employee (delivery driver)
     - Tracks status, request date, delivery address, contact phone, and delivery cost
+- **CustomerFiscalData**: Tax data for invoicing (separate from Customer to allow multiple RFCs / shared by walk-ins)
+    - Fields: `rfc` (unique, indexed), `razonSocial`, `regimenFiscal`, `codigoPostalFiscal`, `usoCfdi`,
+      `emailFacturacion`, plus optional phone/address
+    - DTOs/services under `dto/fiscal/` and `services/fiscal/`
+- **Invoice**: CFDI (Mexican fiscal invoice) tied to a Sale
+    - OneToOne with `Sale` (unique), ManyToOne with `CustomerFiscalData`
+    - Status enum (`InvoiceStatus`): `PENDIENTE`, `TIMBRADA`, `CANCELADA`, `ERROR` — defaults to `PENDIENTE`
+    - Tracks `uuid` (SAT folio), `xmlUrl`, `pdfUrl`, `createdAt`, `timbradoAt`
+    - Service rules: sale must be paid, fiscal data must be active, no duplicate active invoice per sale
+    - DTOs/services under `dto/invoice/` and `services/invoice/`
+    - **Stamping flow** (`InvoiceServiceImpl.timbrarInvoice`): customer + product creation use the Facturapi Java SDK,
+      but the invoice POST is sent through the JDK `HttpClient` (`POST https://www.facturapi.io/v2/invoices` with
+      `Authorization: Bearer ${facturapi.key}`) and parsed via Jackson `JsonNode`. The SDK 1.2.0 invoice deserializer
+      is incompatible with CFDI 4.0 responses, so it is bypassed for that step
+    - **Endpoints** (`InvoiceController`, all `ROLE_ADMIN`/`ROLE_CAJERO`): `POST /api/invoices` (creates a `PENDIENTE`
+      row), `POST /api/invoices/timbrar` (executes stamping), `GET /api/invoices/sale/{saleId}`,
+      `GET /api/invoices/sale/{saleId}/pdf` and `/xml` (server-side proxy downloads from Facturapi using the bearer
+      secret; require `status == TIMBRADA`)
 - **Ticket**: Read-only DTO for printing sale receipts via WebSocket
+- **Dashboard**: Analytics/reporting domain — read-only stats aggregated over a date range
+    - Uses `DashboardRepository` (extends `JpaRepository<Sale, Long>`) with 15 native SQL queries
+    - Stats grouped into: FinancialSummary, ProductAnalysis, Operations, CustomerAnalysis, TimeAnalysis,
+      FinancialHealth, BasketAnalysis
+    - Endpoint: `GET /api/dashboard?startDate=&endDate=` (defaults to current month in Mexico time, converted to UTC for
+      query)
+    - Access restricted to `ROLE_ADMIN`
 
 ### WebSocket Integration
 

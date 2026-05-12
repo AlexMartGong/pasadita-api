@@ -48,6 +48,7 @@ public class SaleDetail {
     @Digits(integer = 12, fraction = 2, message = "Subtotal must have up to 12 digits and 2 decimal places")
     private BigDecimal subtotal;
 
+    @Column(name = "discount", precision = 10, scale = 2)
     @DecimalMin(value = "0.00", message = "Discount must be non-negative")
     @Digits(integer = 10, fraction = 2, message = "Discount must have up to 10 digits and 2 decimal places")
     @Builder.Default
