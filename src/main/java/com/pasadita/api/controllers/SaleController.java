@@ -50,9 +50,26 @@ public class SaleController {
         SaleResponseDto responseDto = saleService.save(saleCreateDto)
                 .orElseThrow(() -> new EntityNotFoundException("Sale could not be saved"));
 
-        sendTicketToPrinterAsync(responseDto.getId(), saleCreateDto.getStationId());
+        Boolean printTicket = saleCreateDto.getPrintTicket();
+        if (printTicket == null || printTicket) {
+            sendTicketToPrinterAsync(responseDto.getId(), saleCreateDto.getStationId());
+        } else if (saleCreateDto.getPaymentMethodId() != null
+                && saleCreateDto.getPaymentMethodId() == 1L) {
+            // Venta en efectivo sin ticket: abrir cajón con pulso ligero.
+            sendOpenDrawerAsync(saleCreateDto.getStationId());
+        }
 
         return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
+    }
+
+    private void sendOpenDrawerAsync(String stationId) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                printerWebSocketHandler.sendOpenDrawerCommand(stationId);
+            } catch (Exception e) {
+                log.error("Error when sending open-drawer command: {}", e.getMessage(), e);
+            }
+        });
     }
 
     private void sendTicketToPrinterAsync(Long saleId, String stationId) {
@@ -114,5 +131,21 @@ public class SaleController {
         sendTicketToPrinterAsync(saleId, stationId);
 
         return ResponseEntity.ok(ticket);
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PostMapping("/open-drawer")
+    public ResponseEntity<?> openDrawer(@RequestParam(required = false) String stationId) {
+        if (stationId == null || stationId.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "stationId es requerido"));
+        }
+
+        sendOpenDrawerAsync(stationId);
+
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "Comando de apertura enviado a la estación " + stationId
+        ));
     }
 }

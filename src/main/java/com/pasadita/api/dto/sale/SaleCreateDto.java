@@ -54,6 +54,9 @@ public class SaleCreateDto {
     @Size(max = 50, message = "The stationId cannot exceed 50 characters")
     private String stationId;
 
+    @Builder.Default
+    private Boolean printTicket = true;
+
     @NotNull(message = "The sale details are required")
     private List<SaleDetailCreateDto> saleDetails;
 

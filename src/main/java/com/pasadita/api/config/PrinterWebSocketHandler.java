@@ -3,6 +3,9 @@ package com.pasadita.api.config;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pasadita.api.dto.ticket.TicketResponseDto;
+import com.pasadita.api.utils.DateTimeUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -23,6 +26,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Component
 public class PrinterWebSocketHandler extends TextWebSocketHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(PrinterWebSocketHandler.class);
 
     private final Map<String, WebSocketSession> stations = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper;
@@ -72,13 +77,6 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /**
-     * Extrae el stationId del query parameter de la URL de conexión.
-     * Ejemplo URL: ws://server/ws/printer?stationId=POS1
-     *
-     * @param session Sesión WebSocket
-     * @return stationId o null si no se encuentra
-     */
     private String extractStationId(WebSocketSession session) {
         URI uri = session.getUri();
         if (uri == null || uri.getQuery() == null) {
@@ -94,21 +92,13 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
         return null;
     }
 
-    /**
-     * Envía un comando de impresión a una estación específica.
-     *
-     * @param stationId ID de la estación (ej: POS1)
-     * @param ticket    DTO del ticket a imprimir
-     * @return true si el mensaje fue enviado exitosamente
-     */
-    public boolean sendPrintCommand(String stationId, TicketResponseDto ticket) {
+    public void sendPrintCommand(String stationId, TicketResponseDto ticket) {
         WebSocketSession session = stations.get(stationId);
         if (session != null && session.isOpen()) {
             try {
                 String ticketJson = objectMapper.writeValueAsString(ticket);
                 session.sendMessage(new TextMessage(ticketJson));
                 System.out.println("Comando de impresión enviado a estación " + stationId);
-                return true;
             } catch (JsonProcessingException e) {
                 System.err.println("Error al serializar ticket para estación " + stationId + ": " + e.getMessage());
             } catch (IOException e) {
@@ -117,14 +107,32 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
         } else {
             System.err.println("Estación " + stationId + " no está conectada o la sesión está cerrada");
         }
-        return false;
     }
 
-    /**
-     * Envía un comando de impresión a todas las estaciones conectadas.
-     *
-     * @param ticket DTO del ticket a imprimir
-     */
+    public void sendOpenDrawerCommand(String stationId) {
+        if (stationId == null || stationId.isBlank()) {
+            log.warn("Comando OPEN_DRAWER ignorado: stationId es nulo o vacío.");
+            return;
+        }
+
+        WebSocketSession session = stations.get(stationId);
+        if (session != null && session.isOpen()) {
+            try {
+                String json = objectMapper.writeValueAsString(Map.of(
+                        "type", "OPEN_DRAWER",
+                        "timestamp", DateTimeUtils.nowUtc().toString()
+                ));
+                session.sendMessage(new TextMessage(json));
+                log.info("Comando OPEN_DRAWER enviado a estación {}", stationId);
+            } catch (IOException e) {
+                log.error("Error al enviar OPEN_DRAWER a estación {}: {}", stationId, e.getMessage(), e);
+            }
+        } else {
+            log.warn("Estación {} no está conectada; no se pudo enviar OPEN_DRAWER", stationId);
+        }
+    }
+
+
     public void sendPrintCommandToAll(TicketResponseDto ticket) {
         try {
             String ticketJson = objectMapper.writeValueAsString(ticket);
@@ -145,40 +153,22 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /**
-     * Obtiene el número de estaciones conectadas.
-     *
-     * @return Número de estaciones activas
-     */
+
     public int getConnectedStationsCount() {
         return stations.size();
     }
 
-    /**
-     * Verifica si hay al menos una estación conectada.
-     *
-     * @return true si hay al menos una estación conectada
-     */
+
     public boolean hasConnectedStations() {
         return !stations.isEmpty();
     }
 
-    /**
-     * Verifica si una estación específica está conectada.
-     *
-     * @param stationId ID de la estación
-     * @return true si la estación está conectada
-     */
     public boolean isStationConnected(String stationId) {
+        if (stationId == null) return false;
         WebSocketSession session = stations.get(stationId);
         return session != null && session.isOpen();
     }
 
-    /**
-     * Obtiene los IDs de todas las estaciones conectadas.
-     *
-     * @return Set con los IDs de las estaciones
-     */
     public Set<String> getConnectedStationIds() {
         return stations.keySet();
     }

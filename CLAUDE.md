@@ -227,6 +227,14 @@ Current domains include:
     - Relationships: ManyToOne with Employee, **Customer (mandatory, NOT NULL)**, PaymentMethod
     - OneToMany with SaleDetail
     - Tracks subtotal, discount, total, paid status, notes, `amountTendered`; `changeDue` is computed in mappers
+    - `SaleCreateDto` carries transient (non-persisted) routing fields: `stationId` (target printer) and
+      `printTicket` (optional `Boolean`, `@Builder.Default = true`). When `printTicket` is `false`, the sale is still
+      saved but the async WebSocket print is skipped. Omitted/`null` ⇒ prints (Jackson yields `null` on the no-args
+      path, so the controller treats `null` as `true` for backward compat)
+    - **Cash-drawer fallback**: the drawer opens via an electric pulse the thermal printer emits over RJ11 when it
+      receives ESC/POS data, so skipping the ticket would leave it shut on cash sales. When `printTicket` is `false`
+      **and** `paymentMethodId == 1L` (cash), `saveSale` instead dispatches a lightweight `OPEN_DRAWER` WebSocket
+      command (no ticket) via `sendOpenDrawerAsync`
 - **SaleDetail**: Line items for sales
     - ManyToOne relationships with Sale and Product
     - Tracks quantity, unit price, subtotal, discount, and total
@@ -270,8 +278,16 @@ The application includes WebSocket support for real-time printer connections:
 
 - **Endpoint**: `/ws/printer?stationId={stationId}`
 - **Handler**: `PrinterWebSocketHandler` manages station connections
-- **Usage**: When a sale is created, tickets are sent asynchronously to connected printer stations
-- Supports sending to specific station or broadcasting to all connected stations
+- **Usage**: When a sale is created, tickets are sent asynchronously to connected printer stations. The async
+  dispatch lives in `SaleController.saveSale` (not the service), gated on `SaleCreateDto.printTicket` (skip when
+  `false`, print when `true`/`null`)
+- Supports sending to specific station (`stationId`) or broadcasting to all connected stations
+- **Drawer command** (decoupled from printing): `PrinterWebSocketHandler.sendOpenDrawerCommand(stationId)` sends a
+  lightweight `{"type":"OPEN_DRAWER","timestamp":<utc>}` `TextMessage` to one station (uses SLF4J: `info` on send,
+  `warn` if the station is offline, `error` on I/O failure). Triggered two ways:
+    - Automatically in `saveSale` when `printTicket == false` and the sale is cash (`paymentMethodId == 1L`)
+    - Manually via `POST /api/sales/open-drawer?stationId=` (`ROLE_ADMIN`/`ROLE_CAJERO`) — `200` + success map when
+      `stationId` is present, `400` + error map when missing/blank. Both paths go through `sendOpenDrawerAsync`
 
 ### Entity Relationship Patterns
 
