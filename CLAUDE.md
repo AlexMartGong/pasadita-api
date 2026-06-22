@@ -67,6 +67,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Database**: MySQL with JPA/Hibernate
 - **Security**: JWT-based authentication with Spring Security
 - **Real-time**: WebSocket for printer connections
+- **Object Storage**: Cloudflare R2 (S3-compatible) via AWS SDK v2 for product image uploads
 - **Documentation**: Spring REST Docs with AsciiDoc
 - **Build Tool**: Maven with wrapper
 - **Code Quality**: Qodana JVM Community linter
@@ -107,7 +108,7 @@ The application follows a standard layered architecture:
 
 ```
 com.pasadita.api/
-├── config/           # WebSocket, CORS, and @ConfigurationProperties (e.g., FacturacionProperties)
+├── config/           # WebSocket, CORS, and @ConfigurationProperties (e.g., FacturacionProperties, R2Properties); S3Config exposes the S3Client bean
 ├── controllers/      # REST endpoints by domain
 ├── dto/              # DTOs organized by domain (customer, employee, product, sale, saledetail, deliveryorder, dashboard, ticket, fiscal, invoice)
 ├── entities/         # JPA entities
@@ -115,7 +116,7 @@ com.pasadita.api/
 ├── exceptions/       # Custom exceptions
 ├── repositories/     # Spring Data JPA repositories
 ├── security/         # Security configuration and JWT filters
-├── services/         # Business logic (interface + implementation pattern by domain — includes fiscal, invoice)
+├── services/         # Business logic (interface + implementation pattern by domain — includes fiscal, invoice, storage)
 ├── utils/            # Common utilities (DateTimeUtils, ValidationUtils)
 └── validation/       # Custom validation annotations and validators
 ```
@@ -130,13 +131,18 @@ com.pasadita.api/
 - Default credentials: root/Root1234 (update in `application.properties` for different environments)
 - Uses Hibernate dialect for MySQL with SQL logging enabled
 - **Production** (`application-prod.properties`): Uses environment variables (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
-  `JWT_SECRET`, `JWT_EXPIRATION`, `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`, `FACTURAPI_KEY`), Hibernate
-  `ddl-auto=validate`, HikariCP pool (max 10)
+  `JWT_SECRET`, `JWT_EXPIRATION`, `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`, `FACTURAPI_KEY`, `R2_ACCESS_KEY`,
+  `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`), Hibernate `ddl-auto=validate`, HikariCP pool (max 10)
 - **Facturación (CFDI)**: `facturacion.emisor.*` (rfc, razon-social, regimen-fiscal, codigo-postal) and
   `facturacion.csd.*` (cer-path, key-path, password) are bound to `FacturacionProperties` (under `config/`).
   `facturapi.key` (env `FACTURAPI_KEY`) is the Facturapi secret bearer token; `FacturapiConfig` exposes both the
   `Facturapi` SDK bean and a shared `HttpClient` bean (`facturapiHttpClient`) used for direct REST calls and proxy
   downloads
+- **Object Storage (Cloudflare R2)**: `cloudflare.r2.*` (access-key, secret-key, endpoint, bucket [default
+  `lapasadita-assets`], public-url) bound to `R2Properties` (record under `config/`), all from env vars (`R2_ACCESS_KEY`,
+  `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`). `S3Config` exposes the AWS SDK v2 `S3Client` bean
+  (endpoint override, static R2 creds, `Region.US_EAST_1`, path-style access). The bean is built eagerly at startup, so
+  the `R2_*` vars must resolve or context startup fails
 - **Timezone Strategy**: Database stores all dates in UTC (`serverTimezone=UTC` in production)
 - **Date Conversion**: Use `DateTimeUtils` class for timezone handling:
     - `DateTimeUtils.nowUtc()` - Get current time in UTC (for saving to DB)
@@ -223,6 +229,9 @@ Current domains include:
 - **CustomerType**: Customer categorization
 - **Product**: Inventory with categories and unit measures
     - `claveProductoSat` (varchar 8) — SAT product/service code, optional, used for CFDI invoicing
+    - `imageUrl` (varchar 255, nullable) — public URL of the product image in Cloudflare R2; set only via the image
+      upload endpoint (see Object Storage), exposed in `ProductResponseDto`. `POST /api/products/{id}/image`
+      (`ROLE_ADMIN`/`ROLE_CAJERO`) accepts a `MultipartFile` and calls `ProductService.uploadImage`
 - **Sale**: Sales transactions with payment methods and sale details
     - Relationships: ManyToOne with Employee, **Customer (mandatory, NOT NULL)**, PaymentMethod
     - OneToMany with SaleDetail
@@ -271,6 +280,19 @@ Current domains include:
     - Endpoint: `GET /api/dashboard?startDate=&endDate=` (defaults to current month in Mexico time, converted to UTC for
       query)
     - Access restricted to `ROLE_ADMIN`
+
+### Object Storage (Cloudflare R2)
+
+Product images are stored in Cloudflare R2 (S3-compatible) via AWS SDK v2:
+
+- **Config**: `R2Properties` (`@ConfigurationProperties(prefix = "cloudflare.r2")`, record under `config/`) +
+  `S3Config` (`S3Client` bean). Version managed by the AWS SDK BOM (`software.amazon.awssdk:bom`) in `pom.xml`
+- **Service** (`services/storage/`): `StorageService.uploadFile(MultipartFile file, String folder)` →
+  `S3StorageServiceImpl` generates a UUID key (`folder/<uuid>.<ext>`, extension preserved), uploads via `putObject`,
+  and returns `publicUrl + "/" + key`. I/O / SDK failures are wrapped in `BusinessRuleException` (400)
+- **Flow**: `ProductServiceImpl.uploadImage(productId, file)` loads the product (404 if missing), uploads to the
+  `products` folder, sets `imageUrl`, saves, and returns the DTO. Endpoint: `POST /api/products/{id}/image`
+  (`ROLE_ADMIN`/`ROLE_CAJERO`)
 
 ### WebSocket Integration
 

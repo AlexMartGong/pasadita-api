@@ -36,5 +36,8 @@ public class Product {
     @Column(name = "clave_producto_sat", length = 8)
     private String claveProductoSat;
 
+    @Column(name = "image_url")
+    private String imageUrl;
+
     private boolean active;
 }

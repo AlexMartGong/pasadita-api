@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -75,5 +76,12 @@ public class ProductController {
     public ResponseEntity<?> changeProductStatus(@PathVariable Long id, @RequestBody ProductChangeStatusDto status) {
         productService.changeStatus(id, status);
         return ResponseEntity.ok(Map.of("message", "The product status has been changed successfully"));
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO')")
+    @PostMapping("/{id}/image")
+    public ResponseEntity<ProductResponseDto> uploadProductImage(@PathVariable Long id,
+                                                                 @RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(productService.uploadImage(id, file));
     }
 }

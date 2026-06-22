@@ -5,6 +5,7 @@ import com.pasadita.api.dto.product.ProductCreateDto;
 import com.pasadita.api.dto.product.ProductResponseDto;
 import com.pasadita.api.dto.product.ProductUpdateDto;
 import com.pasadita.api.dto.product.ProductUpdatePriceDto;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Optional;
@@ -23,5 +24,6 @@ public interface ProductService {
 
     void updatePriceById(Long id, ProductUpdatePriceDto productUpdatePriceDto);
 
+    ProductResponseDto uploadImage(Long productId, MultipartFile file);
 
 }

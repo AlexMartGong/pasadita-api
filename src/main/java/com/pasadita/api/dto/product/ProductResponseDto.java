@@ -20,5 +20,6 @@ public class ProductResponseDto {
     private BigDecimal price;
     private UnitMeasure unitMeasure;
     private String claveProductoSat;
+    private String imageUrl;
     private boolean active;
 }

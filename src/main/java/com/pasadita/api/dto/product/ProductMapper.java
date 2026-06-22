@@ -13,6 +13,7 @@ public class ProductMapper {
                 .price(product.getPrice())
                 .unitMeasure(product.getUnitMeasure())
                 .claveProductoSat(product.getClaveProductoSat())
+                .imageUrl(product.getImageUrl())
                 .active(product.isActive())
                 .build();
     }
