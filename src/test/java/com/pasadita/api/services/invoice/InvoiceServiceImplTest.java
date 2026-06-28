@@ -1,6 +1,7 @@
 package com.pasadita.api.services.invoice;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pasadita.api.config.FacturacionProperties;
 import com.pasadita.api.dto.invoice.InvoiceCreateDto;
 import com.pasadita.api.dto.invoice.InvoiceMapper;
 import com.pasadita.api.dto.invoice.InvoiceResponseDto;
@@ -37,6 +38,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -65,6 +67,11 @@ class InvoiceServiceImplTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    private final FacturacionProperties facturacionProperties = new FacturacionProperties(
+            new FacturacionProperties.Emisor(
+                    "MAMA7908077K3", "ALEJANDRO MARTINEZ MARTINEZ", "626", "46400"),
+            new FacturacionProperties.Csd(null, null, null));
+
     private InvoiceServiceImpl service;
 
     private Sale sale;
@@ -83,6 +90,7 @@ class InvoiceServiceImplTest {
                 invoiceErrorPersister,
                 httpClient,
                 objectMapper,
+                facturacionProperties,
                 "test-secret"
         );
         Product product = Product.builder()
@@ -192,6 +200,74 @@ class InvoiceServiceImplTest {
 
         verify(invoiceErrorPersister, never()).markAsError(any());
         verify(invoiceRepository, times(2)).save(any(Invoice.class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void timbrarInvoice_resicoPersonaMoral_addsIsrRetentionToProductTaxes() throws Exception {
+        // 12-char RFC => persona moral; emisor regimen is 626 (RESICO) => retention applies
+        fiscalData.setRfc("ABC101010AB1");
+        stubSuccessfulStamping();
+
+        ArgumentCaptor<Map<String, Object>> productCaptor = ArgumentCaptor.forClass(Map.class);
+
+        service.timbrarInvoice(dto);
+
+        verify(productsResource).create(productCaptor.capture());
+        List<Map<String, Object>> taxes =
+                (List<Map<String, Object>>) productCaptor.getValue().get("taxes");
+        assertThat(taxes).anySatisfy(tax -> {
+            assertThat(tax.get("type")).isEqualTo("ISR");
+            assertThat(tax.get("rate")).isEqualTo(new BigDecimal("0.0125"));
+            assertThat(tax.get("factor")).isEqualTo("Tasa");
+            assertThat(tax.get("withholding")).isEqualTo(true);
+        });
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void timbrarInvoice_personaFisica_doesNotAddIsrRetention() throws Exception {
+        // default fiscalData RFC "XAXX010101000" is 13 chars => persona física => no retention
+        stubSuccessfulStamping();
+
+        ArgumentCaptor<Map<String, Object>> productCaptor = ArgumentCaptor.forClass(Map.class);
+
+        service.timbrarInvoice(dto);
+
+        verify(productsResource).create(productCaptor.capture());
+        List<Map<String, Object>> taxes =
+                (List<Map<String, Object>>) productCaptor.getValue().get("taxes");
+        assertThat(taxes).noneSatisfy(tax -> assertThat(tax.get("type")).isEqualTo("ISR"));
+        assertThat(taxes).hasSize(1);
+    }
+
+    private void stubSuccessfulStamping() throws Exception {
+        when(saleRepository.findWithDetailsById(sale.getId())).thenReturn(Optional.of(sale));
+        when(fiscalDataRepository.findById(fiscalData.getFiscalId())).thenReturn(Optional.of(fiscalData));
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.empty());
+        when(invoiceMapper.toEntity(eq(dto), eq(sale), eq(fiscalData))).thenReturn(persistedInvoice);
+        when(invoiceRepository.save(any(Invoice.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(invoiceMapper.toResponseDto(any(Invoice.class)))
+                .thenReturn(InvoiceResponseDto.builder().status("TIMBRADA").build());
+
+        when(facturapi.customers()).thenReturn(customersResource);
+        when(facturapi.products()).thenReturn(productsResource);
+
+        io.facturapi.models.Customer remoteCustomer = new io.facturapi.models.Customer();
+        remoteCustomer.setId("cus_1");
+        when(customersResource.create(anyMap(), any())).thenReturn(remoteCustomer);
+
+        io.facturapi.models.Product remoteProduct = new io.facturapi.models.Product();
+        remoteProduct.setId("prod_1");
+        when(productsResource.create(anyMap())).thenReturn(remoteProduct);
+
+        @SuppressWarnings("unchecked")
+        HttpResponse<String> stampedResponse = (HttpResponse<String>) mock(HttpResponse.class);
+        when(stampedResponse.statusCode()).thenReturn(200);
+        when(stampedResponse.body()).thenReturn(
+                "{\"id\":\"inv_abc\",\"uuid\":\"11111111-2222-3333-4444-555555555555\"}");
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(stampedResponse);
     }
 
     @Test

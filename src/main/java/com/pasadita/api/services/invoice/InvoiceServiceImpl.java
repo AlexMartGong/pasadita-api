@@ -2,6 +2,7 @@ package com.pasadita.api.services.invoice;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pasadita.api.config.FacturacionProperties;
 import com.pasadita.api.dto.invoice.InvoiceCreateDto;
 import com.pasadita.api.dto.invoice.InvoiceMapper;
 import com.pasadita.api.dto.invoice.InvoiceResponseDto;
@@ -59,6 +60,10 @@ public class InvoiceServiceImpl implements InvoiceService {
     private static final String FACTURAPI_INVOICE_PATH_MARKER = "/v2/invoices/";
     private static final String FACTURAPI_EMAIL_PATH_SUFFIX = "/email";
 
+    private static final String RESICO_REGIMEN = "626";
+    private static final int PERSONA_MORAL_RFC_LENGTH = 12;
+    private static final BigDecimal RESICO_ISR_RATE = new BigDecimal("0.0125");
+
     private final InvoiceRepository invoiceRepository;
     private final SaleRepository saleRepository;
     private final CustomerFiscalDataRepository fiscalDataRepository;
@@ -67,6 +72,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final InvoiceErrorPersister invoiceErrorPersister;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final FacturacionProperties facturacionProperties;
     private final String facturapiSecret;
 
     public InvoiceServiceImpl(InvoiceRepository invoiceRepository,
@@ -77,6 +83,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                               InvoiceErrorPersister invoiceErrorPersister,
                               HttpClient httpClient,
                               ObjectMapper objectMapper,
+                              FacturacionProperties facturacionProperties,
                               @Value("${facturapi.key:}") String facturapiSecret) {
         this.invoiceRepository = invoiceRepository;
         this.saleRepository = saleRepository;
@@ -86,6 +93,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         this.invoiceErrorPersister = invoiceErrorPersister;
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
+        this.facturacionProperties = facturacionProperties;
         this.facturapiSecret = facturapiSecret;
     }
 
@@ -308,10 +316,12 @@ public class InvoiceServiceImpl implements InvoiceService {
         io.facturapi.models.Customer fiscalCustomer = facturapi.customers().create(
                 buildCustomerPayload(fiscalData), null);
 
+        boolean applyIsrRetention = appliesResicoIsrRetention(fiscalData);
+
         List<Map<String, Object>> items = new ArrayList<>(sale.getSaleDetails().size());
         for (SaleDetail detail : sale.getSaleDetails()) {
             io.facturapi.models.Product remoteProduct = facturapi.products().create(
-                    buildProductPayload(detail));
+                    buildProductPayload(detail, applyIsrRetention));
             items.add(buildItemPayload(detail, remoteProduct.getId()));
         }
 
@@ -360,13 +370,22 @@ public class InvoiceServiceImpl implements InvoiceService {
         );
     }
 
-    private Map<String, Object> buildProductPayload(SaleDetail detail) {
+    private Map<String, Object> buildProductPayload(SaleDetail detail, boolean applyIsrRetention) {
         Product product = detail.getProduct();
-        Map<String, Object> tax = Map.of(
+        List<Map<String, Object>> taxes = new ArrayList<>();
+        taxes.add(Map.of(
                 "type", "IVA",
                 "rate", BigDecimal.ZERO,
                 "factor", "Tasa"
-        );
+        ));
+        if (applyIsrRetention) {
+            taxes.add(Map.of(
+                    "type", "ISR",
+                    "rate", RESICO_ISR_RATE,
+                    "factor", "Tasa",
+                    "withholding", true
+            ));
+        }
         return Map.of(
                 "description", product.getName(),
                 "product_key", product.getClaveProductoSat(),
@@ -374,8 +393,19 @@ public class InvoiceServiceImpl implements InvoiceService {
                 "tax_included", true,
                 "unit_key", product.getUnitMeasure() != null ? product.getUnitMeasure().getSatCode() : "H87",
                 "sku", String.valueOf(product.getId()),
-                "taxes", List.of(tax)
+                "taxes", taxes
         );
+    }
+
+    /**
+     * RESICO issuers (régimen 626) must apply a 1.25% ISR retention when the receptor
+     * is a persona moral (12-char RFC); persona física receptors (13-char RFC) get none.
+     */
+    private boolean appliesResicoIsrRetention(CustomerFiscalData fiscalData) {
+        String rfc = fiscalData.getRfc();
+        return RESICO_REGIMEN.equals(facturacionProperties.emisor().regimenFiscal())
+                && rfc != null
+                && rfc.trim().length() == PERSONA_MORAL_RFC_LENGTH;
     }
 
     private Map<String, Object> buildItemPayload(SaleDetail detail, String remoteProductId) {
