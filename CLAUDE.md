@@ -268,6 +268,12 @@ Current domains include:
       but the invoice POST is sent through the JDK `HttpClient` (`POST https://www.facturapi.io/v2/invoices` with
       `Authorization: Bearer ${facturapi.key}`) and parsed via Jackson `JsonNode`. The SDK 1.2.0 invoice deserializer
       is incompatible with CFDI 4.0 responses, so it is bypassed for that step
+    - **RESICO ISR retention**: `buildProductPayload(detail, applyIsrRetention)` conditionally appends a 1.25% ISR
+      retention to the product `taxes` array as `{type:ISR, rate:0.0125, factor:Tasa, withholding:true}` (Facturapi's
+      convention — `withholding:true` lands it in CFDI `Retenciones`; a separate `retentions` key would be ignored).
+      The flag is computed once per invoice in `appliesResicoIsrRetention(fiscalData)`: true when the emisor régimen is
+      RESICO (`626`, read from `FacturacionProperties.emisor().regimenFiscal()`) **and** the receptor RFC is 12 chars
+      (persona moral). A 13-char RFC (persona física) gets only IVA-0, no retention
     - **Endpoints** (`InvoiceController`, all `ROLE_ADMIN`/`ROLE_CAJERO`): `POST /api/invoices` (creates a `PENDIENTE`
       row), `POST /api/invoices/timbrar` (executes stamping), `GET /api/invoices/sale/{saleId}`,
       `GET /api/invoices/sale/{saleId}/pdf` and `/xml` (server-side proxy downloads from Facturapi using the bearer
