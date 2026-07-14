@@ -50,7 +50,7 @@ Compact repo-specific guidance for OpenCode sessions.
 ## Object Storage (Cloudflare R2)
 
 - **S3-compatible** storage via AWS SDK v2 (`software.amazon.awssdk:s3`, version managed by the AWS SDK BOM in `pom.xml`).
-- Config bound to `R2Properties` (`@ConfigurationProperties(prefix = "cloudflare.r2")`, record under `config/`); all values from env vars (`R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET` defaults `lapasadita-assets`, `R2_PUBLIC_URL`).
+- Config bound to `R2Properties` (`@ConfigurationProperties(prefix = "cloudflare.r2")`, record under `config/`); all values from env vars (`R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET` defaults `lapasadita-assets`, `R2_PUBLIC_URL`). Dev `application.properties` ships dummy fallback defaults for these (and for `CSD_*`/`FACTURAPI_KEY`), so local startup works without real secrets; production requires the real env vars.
 - `S3Config` exposes the `S3Client` bean: endpoint override, static R2 creds, `Region.US_EAST_1`, path-style access enabled.
 - `StorageService` / `S3StorageServiceImpl` (under `services/storage/`): `uploadFile(MultipartFile, folder)` stores under `folder/<uuid>.<ext>`, returns `publicUrl + "/" + key`. Wraps `IOException`/`SdkException` in `BusinessRuleException` (400).
 - **Product images**: `POST /api/products/{id}/image` (`ROLE_ADMIN`/`ROLE_CAJERO`) uploads to the `products` folder and persists `Product.imageUrl` (`image_url varchar(255)`, exposed in `ProductResponseDto`).
@@ -64,6 +64,7 @@ Compact repo-specific guidance for OpenCode sessions.
 
 - Current test suite is minimal. `PasaditaApiApplicationTests` only loads the context.
 - There is an `InvoiceServiceImplTest`, but most domains lack unit/integration tests.
+- Surefire runs with `-XX:+EnableDynamicAgentLoading` (JDK 21 dynamic-agent warning, Mockito/Byte Buddy).
 
 ## CI/CD
 

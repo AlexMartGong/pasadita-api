@@ -32,8 +32,8 @@ A comprehensive RESTful API for managing a small business, built with Spring Boo
 
 ## Technology Stack
 
-- **Framework**: Spring Boot 3.5.5
-- **Language**: Java 17
+- **Framework**: Spring Boot 3.5.15
+- **Language**: Java 21
 - **Database**: MySQL 8.x
 - **ORM**: Spring Data JPA / Hibernate
 - **Security**: Spring Security with JWT (JJWT 0.12.6)
@@ -49,7 +49,7 @@ A comprehensive RESTful API for managing a small business, built with Spring Boo
 
 Before you begin, ensure you have the following installed:
 
-- **Java Development Kit (JDK) 17** or higher
+- **Java Development Kit (JDK) 21** or higher
 - **Maven 3.6+** (or use the included Maven Wrapper)
 - **MySQL 8.x** or higher
 - **Git** (for cloning the repository)

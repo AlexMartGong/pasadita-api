@@ -63,7 +63,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Technology Stack
 
-- **Framework**: Spring Boot 3.5.11 with Java 17
+- **Framework**: Spring Boot 3.5.15 with Java 21
 - **Database**: MySQL with JPA/Hibernate
 - **Security**: JWT-based authentication with Spring Security
 - **Real-time**: WebSocket for printer connections
@@ -137,12 +137,14 @@ com.pasadita.api/
   `facturacion.csd.*` (cer-path, key-path, password) are bound to `FacturacionProperties` (under `config/`).
   `facturapi.key` (env `FACTURAPI_KEY`) is the Facturapi secret bearer token; `FacturapiConfig` exposes both the
   `Facturapi` SDK bean and a shared `HttpClient` bean (`facturapiHttpClient`) used for direct REST calls and proxy
-  downloads
+  downloads. Dev `application.properties` provides dummy fallback defaults for `CSD_*` and `FACTURAPI_KEY`, so local
+  runs/tests start without real secrets; production requires the real env vars
 - **Object Storage (Cloudflare R2)**: `cloudflare.r2.*` (access-key, secret-key, endpoint, bucket [default
   `lapasadita-assets`], public-url) bound to `R2Properties` (record under `config/`), all from env vars (`R2_ACCESS_KEY`,
   `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`). `S3Config` exposes the AWS SDK v2 `S3Client` bean
-  (endpoint override, static R2 creds, `Region.US_EAST_1`, path-style access). The bean is built eagerly at startup, so
-  the `R2_*` vars must resolve or context startup fails
+  (endpoint override, static R2 creds, `Region.US_EAST_1`, path-style access). The bean is built eagerly at startup;
+  dev `application.properties` provides dummy fallback defaults for the `R2_*` vars so the context starts without real
+  credentials, but production (`application-prod.properties`) requires the real env vars
 - **Timezone Strategy**: Database stores all dates in UTC (`serverTimezone=UTC` in production)
 - **Date Conversion**: Use `DateTimeUtils` class for timezone handling:
     - `DateTimeUtils.nowUtc()` - Get current time in UTC (for saving to DB)
@@ -219,6 +221,8 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
 - Main test class: `PasaditaApiApplicationTests`
 - Spring Security Test support available
 - REST Docs integration for API documentation
+- Surefire runs with `-XX:+EnableDynamicAgentLoading` (silences the JDK 21 dynamic-agent warning for Mockito/Byte
+  Buddy)
 
 ### Domain Model
 
