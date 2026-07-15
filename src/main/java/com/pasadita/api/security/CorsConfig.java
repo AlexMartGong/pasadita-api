@@ -28,7 +28,7 @@ public class CorsConfig {
             configuration.setAllowedOrigins(allowedOrigins);
         }
         // Use patterns if configured (development)
-        else if (allowedOriginPatterns != null && !allowedOriginPatterns.isEmpty() && !allowedOriginPatterns.get(0).isEmpty()) {
+        else if (allowedOriginPatterns != null && !allowedOriginPatterns.isEmpty() && !allowedOriginPatterns.getFirst().isEmpty()) {
             configuration.setAllowedOriginPatterns(allowedOriginPatterns);
         }
         // Default development patterns

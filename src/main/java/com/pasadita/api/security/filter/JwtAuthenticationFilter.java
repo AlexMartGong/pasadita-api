@@ -45,9 +45,9 @@ public class JwtAuthenticationFilter extends UsernamePasswordAuthenticationFilte
 
     @Override
     public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
-        Employee employee = null;
-        String username = null;
-        String password = null;
+        Employee employee;
+        String username;
+        String password;
 
         try {
             employee = new ObjectMapper().readValue(request.getInputStream(), Employee.class);
