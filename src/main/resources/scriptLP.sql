@@ -193,4 +193,9 @@ create index employee_id
 create index payment_method_id
     on sales (payment_method_id);
 
+-- Seed: usuario admin para entornos locales (password '123456', hash BCrypt
+-- verificado con BCryptPasswordEncoder). Cambiar la contraseña en produccion.
+insert into employees (full_name, phone, username, position, active, password)
+values ('Administrador', '0000000000', 'admin', 'ROLE_ADMIN', 1,
+        '$2a$10$qd.QJAjvj6mCt1HOz.IiyeEoriWySSqEuVOMM88DCg.GJCtarWpgC');
 

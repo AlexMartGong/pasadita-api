@@ -59,6 +59,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./mvnw clean package
 ```
 
+### Local Docker Stack
+
+```bash
+# Build the prod image and start MySQL (host port 3307) + API (8080)
+docker build -t pasadita-api:prod .
+docker compose -f docker-compose.local.yml up -d
+
+# Re-seed the database (destroys local data; scriptLP.sql runs on fresh volume)
+docker compose -f docker-compose.local.yml down -v
+```
+
+- Two local MySQLs coexist: the compose container on host port **3307** and the host's own MySQL on **3306**.
+  `./mvnw spring-boot:run` uses the host DB (3306); the dockerized API uses the container DB (`local-db:3306`).
+- `scriptLP.sql` is mounted as a MySQL init script, so the prod profile's `ddl-auto=validate` passes on a fresh
+  volume; it seeds the `admin`/`123456` user (see Data Model Patterns).
+- All secrets in `docker-compose.local.yml` are local-only dummies; `JWT_SECRET` must be valid base64
+  (`TokenJwtConfig` base64-decodes it).
+
 ## Architecture Overview
 
 ### Technology Stack
@@ -100,7 +118,10 @@ The application follows a standard layered architecture:
 - Separate DTOs for Create, Update, Response, and specific operations (ChangePassword, ChangeStatus)
 - Dedicated mapper classes for entity-DTO conversion
 - **Schema source of truth**: `src/main/resources/scriptLP.sql` is the canonical MySQL DDL. Keep entities aligned (
-  column names, nullability, length, indexes) so production `ddl-auto=validate` passes.
+  column names, nullability, length, indexes) so production `ddl-auto=validate` passes. The script ends with a seed
+  `INSERT` for the `admin` employee (`ROLE_ADMIN`, password `123456`, verified BCrypt hash) — local convenience only;
+  change the password in production. Never hand-write or copy BCrypt hashes from tutorials: generate them with
+  `BCryptPasswordEncoder` and verify with `matches()` before inserting.
 
 ## Development Guidelines
 

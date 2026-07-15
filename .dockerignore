@@ -1,0 +1,41 @@
+# Build output
+target/
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# Git / CI
+.git/
+.github/
+.gitignore
+.gitattributes
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.*
+
+# OS temp files
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Repo extras not needed for the build
+.claude/
+.agents/
+*.md
+qodana.yaml
+skills-lock.json
+mvnw.cmd
+
+# CSD certificates (fiscal secrets) — mounted as a volume in prod,
+# never baked into the image
+certificados/
+
+# Keep: .mvn/wrapper, mvnw, pom.xml, src/ (required to build inside the container)
