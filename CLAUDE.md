@@ -66,6 +66,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 cp .env.example .env
 
 # Build the prod image and start MySQL (host port 3307) + API (8080)
+# The Dockerfile is runtime-only (copies target/*.jar), so build the JAR first
+./mvnw clean package -DskipTests
 docker build -t pasadita-api:prod .
 docker compose -f docker-compose.local.yml up -d
 

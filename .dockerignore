@@ -1,5 +1,6 @@
-# Build output
+# Build output — keep only the bootable JAR (the Dockerfile is runtime-only)
 target/
+!target/pasadita-api-*.jar
 
 # IDEs
 .idea/
@@ -38,4 +39,8 @@ mvnw.cmd
 # never baked into the image
 certificados/
 
-# Keep: .mvn/wrapper, mvnw, pom.xml, src/ (required to build inside the container)
+# Source tree — not needed: the image copies the prebuilt JAR from target/
+src/
+.mvn/
+mvnw
+pom.xml
