@@ -342,7 +342,15 @@ Product images are stored in Cloudflare R2 (S3-compatible) via AWS SDK v2:
 The application includes WebSocket support for real-time printer connections:
 
 - **Endpoint**: `/ws/printer?stationId={stationId}`
-- **Handler**: `PrinterWebSocketHandler` manages station connections
+- **Handler**: `PrinterWebSocketHandler` manages station connections. Uses Lombok `@Slf4j` + `@RequiredArgsConstructor`;
+  all logging is SLF4J (no `System.out`)
+- **Thread safety**: `afterConnectionEstablished` stores each session wrapped in Spring's
+  `ConcurrentWebSocketSessionDecorator` (sendTimeLimit 10 s, bufferSizeLimit 1 MB) — sends are dispatched from async
+  threads (`CompletableFuture.runAsync` in `SaleController`) and raw WebSocket sessions are not thread-safe (concurrent
+  `sendMessage` threw `IllegalStateException: The remote endpoint was in state [TEXT_FULL_WRITING]` and silently dropped
+  the ticket/drawer command). On buffer overflow or send timeout the decorator throws `SessionLimitExceededException`
+  and closes the session with `SESSION_NOT_RELIABLE`; close/error callbacks receive the raw session, but map cleanup is
+  keyed by `stationId` (from the query string), so removal still works
 - **Usage**: When a sale is created, tickets are sent asynchronously to connected printer stations. The async
   dispatch lives in `SaleController.saveSale` (not the service), gated on `SaleCreateDto.printTicket` (skip when
   `false`, print when `true`/`null`)

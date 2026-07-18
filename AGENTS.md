@@ -81,7 +81,10 @@ Compact repo-specific guidance for OpenCode sessions.
 ## WebSocket
 
 - Printer endpoint: `/ws/printer?stationId={stationId}`
-- Handler: `PrinterWebSocketHandler`
+- Handler: `PrinterWebSocketHandler` (`@Slf4j` + `@RequiredArgsConstructor`, SLF4J-only logging)
+- Sessions are stored wrapped in `ConcurrentWebSocketSessionDecorator` (sendTimeLimit 10 s, bufferSizeLimit 1 MB):
+  sends come from async threads and raw sessions are not thread-safe (`TEXT_FULL_WRITING` dropped messages). Map
+  cleanup is keyed by `stationId`, so close/error callbacks (which get the raw session) still remove correctly.
 - Sale ticket print is dispatched async from `SaleController.saveSale` (not the service), gated on
   `SaleCreateDto.printTicket` (transient `Boolean`, defaults true). `false` skips printing; omitted/`null` still prints.
 - Drawer command decoupled from printing: `sendOpenDrawerCommand(stationId)` sends `{"type":"OPEN_DRAWER","timestamp":<utc>}`.

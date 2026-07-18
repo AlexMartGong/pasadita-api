@@ -4,50 +4,47 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pasadita.api.dto.ticket.TicketResponseDto;
 import com.pasadita.api.utils.DateTimeUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
 import java.net.URI;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Handler para gestionar las conexiones WebSocket de impresoras de tickets.
- * Mantiene un registro de todas las estaciones conectadas usando stationId como clave.
- * Las estaciones se conectan mediante: ws://server/ws/printer?stationId=POS1
- */
+@Slf4j
 @Component
+@RequiredArgsConstructor
 public class PrinterWebSocketHandler extends TextWebSocketHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(PrinterWebSocketHandler.class);
+    private static final int SEND_TIME_LIMIT_MS = 10_000;
+    private static final int SEND_BUFFER_SIZE_LIMIT = 1024 * 1024;
 
     private final Map<String, WebSocketSession> stations = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper;
-
-    public PrinterWebSocketHandler(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
-    }
 
     @Override
     public void afterConnectionEstablished(@NonNull WebSocketSession session) {
         String stationId = extractStationId(session);
         if (stationId != null) {
-            stations.put(stationId, session);
-            System.out.println("Nueva conexión de impresora establecida - StationId: " + stationId + ", SessionId: " + session.getId());
+            WebSocketSession safeSession =
+                    new ConcurrentWebSocketSessionDecorator(session, SEND_TIME_LIMIT_MS, SEND_BUFFER_SIZE_LIMIT);
+            stations.put(stationId, safeSession);
+            log.info("Impresora conectada con sesión concurrente segura - StationId: {}, SessionId: {}, sendTimeLimit={}ms, bufferSizeLimit={}B",
+                    stationId, session.getId(), SEND_TIME_LIMIT_MS, SEND_BUFFER_SIZE_LIMIT);
         } else {
-            System.out.println("Conexión rechazada: No se proporcionó stationId. SessionId: " + session.getId());
+            log.warn("Conexión rechazada: no se proporcionó stationId. SessionId: {}", session.getId());
             try {
                 session.close(CloseStatus.BAD_DATA.withReason("stationId es requerido"));
             } catch (IOException e) {
-                System.err.println("Error al cerrar sesión sin stationId: " + e.getMessage());
+                log.error("Error al cerrar sesión sin stationId: {}", e.getMessage(), e);
             }
         }
     }
@@ -55,8 +52,7 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
     @Override
     protected void handleTextMessage(@NonNull WebSocketSession session, @NonNull TextMessage message) {
         String stationId = extractStationId(session);
-        String payload = message.getPayload();
-        System.out.println("Confirmación de impresión recibida de estación " + stationId + ": " + payload);
+        log.info("Confirmación de impresión recibida de estación {}: {}", stationId, message.getPayload());
     }
 
     @Override
@@ -64,14 +60,14 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
         String stationId = extractStationId(session);
         if (stationId != null) {
             stations.remove(stationId);
-            System.out.println("Conexión de impresora cerrada - StationId: " + stationId + ", Status: " + status);
+            log.info("Conexión de impresora cerrada - StationId: {}, Status: {}", stationId, status);
         }
     }
 
     @Override
     public void handleTransportError(@NonNull WebSocketSession session, @NonNull Throwable exception) {
         String stationId = extractStationId(session);
-        System.err.println("Error de transporte en estación " + stationId + ": " + exception.getMessage());
+        log.error("Error de transporte en estación {}: {}", stationId, exception.getMessage(), exception);
         if (stationId != null) {
             stations.remove(stationId);
         }
@@ -98,14 +94,14 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
             try {
                 String ticketJson = objectMapper.writeValueAsString(ticket);
                 session.sendMessage(new TextMessage(ticketJson));
-                System.out.println("Comando de impresión enviado a estación " + stationId);
+                log.info("Comando de impresión enviado a estación {}", stationId);
             } catch (JsonProcessingException e) {
-                System.err.println("Error al serializar ticket para estación " + stationId + ": " + e.getMessage());
+                log.error("Error al serializar ticket para estación {}: {}", stationId, e.getMessage(), e);
             } catch (IOException e) {
-                System.err.println("Error al enviar comando a estación " + stationId + ": " + e.getMessage());
+                log.error("Error al enviar comando a estación {}: {}", stationId, e.getMessage(), e);
             }
         } else {
-            System.err.println("Estación " + stationId + " no está conectada o la sesión está cerrada");
+            log.warn("Estación {} no está conectada o la sesión está cerrada", stationId);
         }
     }
 
@@ -142,35 +138,15 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
                 if (session.isOpen()) {
                     try {
                         session.sendMessage(message);
-                        System.out.println("Comando de impresión enviado a estación " + entry.getKey());
+                        log.info("Comando de impresión enviado a la estación {}", entry.getKey());
                     } catch (IOException e) {
-                        System.err.println("Error al enviar mensaje a estación " + entry.getKey() + ": " + e.getMessage());
+                        log.error("Error al enviar mensaje a estación {}: {}", entry.getKey(), e.getMessage(), e);
                     }
                 }
             }
         } catch (JsonProcessingException e) {
-            System.err.println("Error al serializar ticket: " + e.getMessage());
+            log.error("Error al serializar ticket: {}", e.getMessage(), e);
         }
     }
 
-
-    public int getConnectedStationsCount() {
-        return stations.size();
-    }
-
-
-    public boolean hasConnectedStations() {
-        return !stations.isEmpty();
-    }
-
-    public boolean isStationConnected(String stationId) {
-        if (stationId == null) return false;
-        WebSocketSession session = stations.get(stationId);
-        return session != null && session.isOpen();
-    }
-
-    public Set<String> getConnectedStationIds() {
-        return stations.keySet();
-    }
 }
-

@@ -298,6 +298,9 @@ GET    /api/dashboard?startDate=&endDate= - Aggregated business stats (defaults 
 /ws/printer?stationId={stationId} - Printer station connection (tickets and OPEN_DRAWER commands)
 ```
 
+Sessions are wrapped in Spring's `ConcurrentWebSocketSessionDecorator` (10 s send limit, 1 MB buffer), so concurrent
+ticket/drawer sends from async threads are serialized safely instead of failing with `TEXT_FULL_WRITING`.
+
 ## Architecture
 
 ### Project Structure
