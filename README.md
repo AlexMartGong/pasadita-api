@@ -1,6 +1,6 @@
 # Pasadita API
 
-A comprehensive RESTful API for managing a small business, built with Spring Boot. This API provides complete functionality for managing employees, products, customers, sales, and delivery orders with JWT-based authentication and role-based authorization.
+A comprehensive RESTful API for managing a small business, built with Spring Boot. This API provides complete functionality for managing employees, products, customers, sales, delivery orders, CFDI invoicing (Mexican electronic invoices), and business analytics with JWT-based authentication and role-based authorization.
 
 ## Table of Contents
 
@@ -10,6 +10,7 @@ A comprehensive RESTful API for managing a small business, built with Spring Boo
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Running the Application](#running-the-application)
+- [Local Docker Stack](#local-docker-stack)
 - [API Endpoints](#api-endpoints)
 - [Architecture](#architecture)
 - [Security](#security)
@@ -20,10 +21,14 @@ A comprehensive RESTful API for managing a small business, built with Spring Boo
 ## Features
 
 - **Employee Management**: Full CRUD operations with role-based access control
-- **Product Management**: Manage product catalog with categories and pricing
+- **Product Management**: Manage product catalog with categories, pricing, and product images stored in Cloudflare R2
 - **Customer Management**: Customer and customer type administration
+- **Customer Fiscal Data**: Tax data (RFC, régimen fiscal, uso CFDI) for invoicing, decoupled from customers
 - **Sales Management**: Complete sales tracking with detailed line items
 - **Delivery Orders**: Track and manage delivery orders with status updates
+- **CFDI Invoicing**: Mexican electronic invoices (CFDI 4.0) stamped through Facturapi, with PDF/XML download and email delivery
+- **Dashboard Analytics**: Aggregated financial, product, customer, and time-based stats over a date range (admin only)
+- **Ticket Printing**: Real-time receipt printing to POS stations via WebSocket, including cash-drawer open commands
 - **JWT Authentication**: Secure token-based authentication
 - **Role-Based Authorization**: Fine-grained access control using Spring Security
 - **Input Validation**: Comprehensive data validation using Jakarta Validation
@@ -32,13 +37,19 @@ A comprehensive RESTful API for managing a small business, built with Spring Boo
 
 ## Technology Stack
 
-- **Framework**: Spring Boot 3.5.5
-- **Language**: Java 17
+- **Framework**: Spring Boot 3.5.15
+- **Language**: Java 21
 - **Database**: MySQL 8.x
 - **ORM**: Spring Data JPA / Hibernate
 - **Security**: Spring Security with JWT (JJWT 0.12.6)
+- **Real-time**: Spring WebSocket (printer stations)
+- **Invoicing**: Facturapi (CFDI 4.0 stamping)
+- **Object Storage**: Cloudflare R2 (S3-compatible) via AWS SDK v2
 - **Validation**: Jakarta Validation
 - **Build Tool**: Maven 3.x
+- **Containers**: Docker + Docker Compose (local testing stack)
+- **Code Quality**: Qodana JVM Community linter
+- **CI/CD**: GitHub Actions (deploy to DigitalOcean on `main` push, Qodana on PRs)
 - **Additional Libraries**:
   - Lombok (reduce boilerplate code)
   - Spring Boot Actuator (monitoring)
@@ -49,10 +60,11 @@ A comprehensive RESTful API for managing a small business, built with Spring Boo
 
 Before you begin, ensure you have the following installed:
 
-- **Java Development Kit (JDK) 17** or higher
+- **Java Development Kit (JDK) 21** or higher
 - **Maven 3.6+** (or use the included Maven Wrapper)
 - **MySQL 8.x** or higher
 - **Git** (for cloning the repository)
+- **Docker + Docker Compose** (optional, for the local Docker stack)
 
 ## Installation
 
@@ -69,12 +81,14 @@ cd pasadita-api
 CREATE DATABASE la_pasadita_database;
 ```
 
+The canonical schema lives in `src/main/resources/scriptLP.sql` (see [Database Schema](#database-schema)).
+
 3. **Configure database credentials**
 
 Update the `src/main/resources/application.properties` file with your MySQL credentials:
 
 ```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/la_pasadita_database?useSSL=false&serverTimezone=GMT-6&allowPublicKeyRetrieval=true
+spring.datasource.url=jdbc:mysql://localhost:3306/la_pasadita_database?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
 spring.datasource.username=your_username
 spring.datasource.password=your_password
 ```
@@ -94,16 +108,38 @@ The application is configured to connect to a MySQL database. Default settings:
 - **Database Name**: `la_pasadita_database`
 - **Host**: `localhost:3306`
 - **Username**: `root`
-- **Password**: `root`
+- **Password**: `Root1234`
+
+Dates are stored in UTC; use the `DateTimeUtils` class for timezone conversions (Mexico time for API responses).
 
 ### JWT Configuration
 
 JWT authentication is configured with the following defaults (can be modified in `application.properties`):
 
 - **Token Expiration**: 24 hours (86400000 ms)
-- **Secret Key**: Configurable in `jwt.secret` property
+- **Secret Key**: Configurable via the `JWT_SECRET` environment variable — must be valid base64 (it is base64-decoded at startup)
 
 **Important**: Change the JWT secret key in production environments.
+
+### CORS Configuration
+
+CORS is handled by the `CorsConfig` class (`security/`):
+
+- `app.cors.allowed-origins` (env `CORS_ALLOWED_ORIGINS`) — exact origins; production defaults to `https://lapasadita.app`
+- `app.cors.allowed-origin-patterns` — wildcard patterns
+- If neither is set, development falls back to permissive patterns for `localhost`, `127.0.0.1`, and private LAN ranges (`192.168.*`, `10.*`)
+
+### External Integrations
+
+Production (`application-prod.properties`) reads all secrets from environment variables:
+
+- **Database**: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`
+- **JWT**: `JWT_SECRET`, `JWT_EXPIRATION`
+- **CORS**: `CORS_ALLOWED_ORIGINS`
+- **CFDI / Facturapi**: `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`, `FACTURAPI_KEY`
+- **Cloudflare R2**: `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`
+
+Dev `application.properties` ships dummy fallback defaults for the CSD, Facturapi, and R2 variables, so local runs and tests start without real secrets.
 
 ### Server Configuration
 
@@ -115,11 +151,11 @@ JWT authentication is configured with the following defaults (can be modified in
 ### Using Maven Wrapper (Recommended)
 
 ```bash
-# Run with default profile
+# Run with default (dev) profile
 ./mvnw spring-boot:run
 
-# Run with development profile
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+# Run with production profile
+./mvnw spring-boot:run -Dspring-boot.run.profiles=prod
 ```
 
 ### Using Packaged JAR
@@ -134,6 +170,28 @@ java -jar target/pasadita-api-0.0.1-SNAPSHOT.jar
 
 The application will start on `http://localhost:8080`
 
+## Local Docker Stack
+
+A self-contained stack (MySQL + API with the prod profile) for local testing:
+
+```bash
+# Create the local env file (dummy values, stack boots as-is)
+cp .env.example .env
+
+# Build the prod image and start MySQL (host port 3307) + API (8080)
+docker build -t pasadita-api:prod .
+docker compose -f docker-compose.local.yml up -d
+
+# Re-seed the database (destroys local data; scriptLP.sql runs on fresh volume)
+docker compose -f docker-compose.local.yml down -v
+```
+
+Notes:
+
+- The compose MySQL is exposed on host port **3307** so it can coexist with a host MySQL on 3306. `./mvnw spring-boot:run` uses the host DB; the dockerized API uses the container DB (`local-db:3306`).
+- `scriptLP.sql` is mounted as a MySQL init script, so the prod profile's `ddl-auto=validate` passes on a fresh volume. It seeds an `admin`/`123456` user (local convenience only — change it in production).
+- Secrets are interpolated from a gitignored `.env` auto-loaded by Docker Compose. `.env.example` is the committed template with local-only dummy values.
+
 ## API Endpoints
 
 ### Authentication
@@ -142,17 +200,17 @@ The application will start on `http://localhost:8080`
 POST /login - Authenticate and receive JWT token
 ```
 
-### Employees
+### Employees (ADMIN only)
 
 ```
-GET    /api/employees/all - Get all employees (ADMIN only)
-GET    /api/employees/{id} - Get employee by ID (ADMIN only)
-GET    /api/employees/search?username={username} - Search employee by username (ADMIN only)
-POST   /api/employees/save - Create new employee (ADMIN only)
-PUT    /api/employees/{id} - Update employee (ADMIN only)
-DELETE /api/employees/delete/{id} - Delete employee (ADMIN only)
-PUT    /api/employees/change-password/{id} - Change employee password (ADMIN only)
-PUT    /api/employees/change-status/{id} - Change employee status (ADMIN only)
+GET    /api/employees/all - Get all employees
+GET    /api/employees/{id} - Get employee by ID
+GET    /api/employees/search?username={username} - Search employee by username
+POST   /api/employees/save - Create new employee
+PUT    /api/employees/{id} - Update employee
+DELETE /api/employees/delete/{id} - Delete employee
+PUT    /api/employees/change-password/{id} - Change employee password
+PUT    /api/employees/change-status/{id} - Change employee status
 ```
 
 ### Products
@@ -161,20 +219,18 @@ PUT    /api/employees/change-status/{id} - Change employee status (ADMIN only)
 GET    /api/products/all - Get all products
 GET    /api/products/{id} - Get product by ID
 POST   /api/products/save - Create new product
-PUT    /api/products/{id} - Update product
-DELETE /api/products/delete/{id} - Delete product
-PUT    /api/products/change-price/{id} - Update product price
+PUT    /api/products/update/{id} - Update product
+PUT    /api/products/update-price/{id} - Update product price
 PUT    /api/products/change-status/{id} - Change product status
+POST   /api/products/{id}/image - Upload product image (multipart, stored in R2)
 ```
 
 ### Customers
 
 ```
 GET    /api/customers/all - Get all customers
-GET    /api/customers/{id} - Get customer by ID
 POST   /api/customers/save - Create new customer
-PUT    /api/customers/{id} - Update customer
-DELETE /api/customers/delete/{id} - Delete customer
+PUT    /api/customers/update/{id} - Update customer
 PUT    /api/customers/change-status/{id} - Change customer status
 ```
 
@@ -182,31 +238,64 @@ PUT    /api/customers/change-status/{id} - Change customer status
 
 ```
 GET    /api/customer-types/all - Get all customer types
-GET    /api/customer-types/{id} - Get customer type by ID
 POST   /api/customer-types/save - Create new customer type
-PUT    /api/customer-types/{id} - Update customer type
-DELETE /api/customer-types/delete/{id} - Delete customer type
+PUT    /api/customer-types/update - Update customer type
+```
+
+### Customer Fiscal Data
+
+```
+GET    /api/customer-fiscal-data/all - Get all fiscal data records
+GET    /api/customer-fiscal-data/{id} - Get fiscal data by ID
+GET    /api/customer-fiscal-data/by-rfc/{rfc} - Get fiscal data by RFC
+POST   /api/customer-fiscal-data/save - Create fiscal data
+PUT    /api/customer-fiscal-data/update/{id} - Update fiscal data
 ```
 
 ### Sales
 
 ```
 GET    /api/sales/all - Get all sales
-GET    /api/sales/{id} - Get sale by ID
-POST   /api/sales/save - Create new sale
-PUT    /api/sales/{id} - Update sale
-DELETE /api/sales/delete/{id} - Delete sale
+POST   /api/sales/save - Create new sale (optionally prints ticket via WebSocket)
+PUT    /api/sales/update/{id} - Update sale
+PUT    /api/sales/change-status/{id} - Change sale status
+GET    /api/sales/{saleId}/details - Get sale line items
+GET    /api/sales/{saleId}/ticket - Get printable ticket data
+POST   /api/sales/open-drawer?stationId={stationId} - Open cash drawer at a station
 ```
 
 ### Delivery Orders
 
 ```
 GET    /api/delivery-orders/all - Get all delivery orders
-GET    /api/delivery-orders/{id} - Get delivery order by ID
 POST   /api/delivery-orders/save - Create new delivery order
-PUT    /api/delivery-orders/{id} - Update delivery order
-DELETE /api/delivery-orders/delete/{id} - Delete delivery order
+PUT    /api/delivery-orders/update/{id} - Update delivery order
 PUT    /api/delivery-orders/change-status/{id} - Change delivery order status
+```
+
+### Invoices (CFDI)
+
+```
+POST   /api/invoices - Create a pending invoice request
+GET    /api/invoices - List invoices (paginated)
+POST   /api/invoices/timbrar - Stamp an invoice through Facturapi
+DELETE /api/invoices/{invoiceId}?motive={motive} - Cancel an invoice (ADMIN only)
+GET    /api/invoices/sale/{saleId} - Get invoice by sale
+GET    /api/invoices/sale/{saleId}/pdf - Download stamped invoice PDF
+GET    /api/invoices/sale/{saleId}/xml - Download stamped invoice XML
+POST   /api/invoices/sale/{saleId}/email?email={email} - Email invoice to recipient
+```
+
+### Dashboard (ADMIN only)
+
+```
+GET    /api/dashboard?startDate=&endDate= - Aggregated business stats (defaults to current month, Mexico time)
+```
+
+### WebSocket
+
+```
+/ws/printer?stationId={stationId} - Printer station connection (tickets and OPEN_DRAWER commands)
 ```
 
 ## Architecture
@@ -215,31 +304,29 @@ PUT    /api/delivery-orders/change-status/{id} - Change delivery order status
 
 ```
 com.pasadita.api
-├── controllers/          # REST API endpoints
+├── config/              # WebSocket, Facturapi, S3/R2, @ConfigurationProperties
+├── controllers/         # REST API endpoints
 ├── services/            # Business logic layer
 │   ├── customer/
+│   ├── dashboard/
 │   ├── deliveryorder/
 │   ├── employee/
+│   ├── fiscal/
+│   ├── invoice/
 │   ├── product/
 │   ├── sale/
-│   └── saledetail/
+│   ├── saledetail/
+│   └── storage/
 ├── repositories/        # Data access layer
-├── entities/           # JPA entities
-├── dto/               # Data Transfer Objects
-│   ├── customer/
-│   ├── deliveryorder/
-│   ├── employee/
-│   ├── product/
-│   ├── sale/
-│   └── saledetail/
-├── enums/             # Enumerations
-│   ├── delivery/
-│   ├── product/
-│   └── user/
-├── security/          # Security configuration
+├── entities/            # JPA entities
+├── dto/                 # Data Transfer Objects (by domain, incl. dashboard,
+│                        # fiscal, invoice, ticket)
+├── enums/               # Enumerations (delivery, invoice, product, user)
+├── exceptions/          # Custom exceptions + GlobalExceptionHandler
+├── security/            # Security configuration, CORS, JWT filters
 │   └── filter/
-├── validation/        # Custom validators
-└── utils/            # Utility classes
+├── validation/          # Custom validators
+└── utils/               # Utility classes (DateTimeUtils, ValidationUtils)
 ```
 
 ### Layered Architecture
@@ -267,7 +354,7 @@ The application follows a clean layered architecture:
 - **JWT Token Authentication**: Stateless authentication using JSON Web Tokens
 - **BCrypt Password Encoding**: Secure password hashing
 - **Role-Based Access Control**: Using Spring Security's `@PreAuthorize` annotations
-- **CORS Configuration**: Configured for cross-origin requests
+- **CORS Configuration**: `CorsConfig` class; production restricted to `https://lapasadita.app`, development falls back to localhost/LAN patterns
 
 ### Security Filters
 
@@ -276,8 +363,9 @@ The application follows a clean layered architecture:
 
 ### Roles
 
-- **ADMIN**: Full access to employee management and system administration
-- **USER**: Access to regular business operations
+- **ROLE_ADMIN**: Full access, including employee management, dashboard, and invoice cancellation
+- **ROLE_CAJERO**: Cashier — sales, products, customers, invoicing
+- **ROLE_PEDIDOS**: Orders — delivery and order-related operations
 
 ## Testing
 
@@ -292,6 +380,8 @@ The application follows a clean layered architecture:
 ```bash
 ./mvnw test -Dtest=PasaditaApiApplicationTests
 ```
+
+The suite includes `PasaditaApiApplicationTests` (context load) and `InvoiceServiceImplTest` (invoice business rules).
 
 ### Generate Test Documentation
 
@@ -325,16 +415,18 @@ This will generate API documentation using Spring REST Docs in the `target/gener
 
 ### Database Schema
 
-The application uses JPA/Hibernate for ORM with the following main entities:
+`src/main/resources/scriptLP.sql` is the canonical MySQL DDL (production runs Hibernate with `ddl-auto=validate`). Main entities:
 
 - **Employee**: System users with authentication
-- **Product**: Product catalog with categories
+- **Product**: Product catalog with categories, SAT product codes, and image URLs
 - **Customer**: Customer information
 - **CustomerType**: Customer categorization
+- **CustomerFiscalData**: Tax data for CFDI invoicing (RFC, régimen fiscal, uso CFDI)
 - **Sale**: Sales transactions
 - **SaleDetail**: Line items for sales
 - **DeliveryOrder**: Delivery tracking
-- **PaymentMethod**: Payment methods
+- **PaymentMethod**: Payment methods with SAT forma de pago codes
+- **Invoice**: CFDI invoices tied to sales (status, SAT UUID, XML/PDF URLs)
 
 ## Common Development Tasks
 

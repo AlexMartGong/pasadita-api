@@ -13,10 +13,10 @@ import java.util.List;
 @Configuration
 public class CorsConfig {
 
-    @Value("${cors.allowed-origins:}")
+    @Value("${app.cors.allowed-origins:https://lapasadita.app}")
     private List<String> allowedOrigins;
 
-    @Value("${cors.allowed-origin-patterns:}")
+    @Value("${app.cors.allowed-origin-patterns:}")
     private List<String> allowedOriginPatterns;
 
     @Bean
@@ -24,11 +24,11 @@ public class CorsConfig {
         CorsConfiguration configuration = new CorsConfiguration();
 
         // Use exact origins if configured (production)
-        if (allowedOrigins != null && !allowedOrigins.isEmpty() && !allowedOrigins.get(0).isEmpty()) {
+        if (allowedOrigins != null && !allowedOrigins.isEmpty() && !allowedOrigins.getFirst().isEmpty()) {
             configuration.setAllowedOrigins(allowedOrigins);
         }
         // Use patterns if configured (development)
-        else if (allowedOriginPatterns != null && !allowedOriginPatterns.isEmpty() && !allowedOriginPatterns.get(0).isEmpty()) {
+        else if (allowedOriginPatterns != null && !allowedOriginPatterns.isEmpty() && !allowedOriginPatterns.getFirst().isEmpty()) {
             configuration.setAllowedOriginPatterns(allowedOriginPatterns);
         }
         // Default development patterns

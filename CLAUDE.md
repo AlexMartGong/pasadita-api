@@ -59,11 +59,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./mvnw clean package
 ```
 
+### Local Docker Stack
+
+```bash
+# Create the local env file (dummy values, stack boots as-is)
+cp .env.example .env
+
+# Build the prod image and start MySQL (host port 3307) + API (8080)
+# The Dockerfile is runtime-only (copies target/*.jar), so build the JAR first
+./mvnw clean package -DskipTests
+docker build -t pasadita-api:prod .
+docker compose -f docker-compose.local.yml up -d
+
+# Re-seed the database (destroys local data; scriptLP.sql runs on fresh volume)
+docker compose -f docker-compose.local.yml down -v
+```
+
+- Two local MySQLs coexist: the compose container on host port **3307** and the host's own MySQL on **3306**.
+  `./mvnw spring-boot:run` uses the host DB (3306); the dockerized API uses the container DB (`local-db:3306`).
+- `scriptLP.sql` is mounted as a MySQL init script, so the prod profile's `ddl-auto=validate` passes on a fresh
+  volume; it seeds the `admin`/`123456` user (see Data Model Patterns).
+- Secrets in `docker-compose.local.yml` are no longer hardcoded: they're interpolated (`${VAR}`) from a gitignored
+  `.env` in the project root, which Docker Compose auto-loads. Copy `.env.example` (committed template with local-only
+  dummy values) to `.env` and the stack boots without extra setup. `JWT_SECRET` must be valid base64 (`TokenJwtConfig`
+  base64-decodes it).
+
 ## Architecture Overview
 
 ### Technology Stack
 
-- **Framework**: Spring Boot 3.5.11 with Java 17
+- **Framework**: Spring Boot 3.5.15 with Java 21
 - **Database**: MySQL with JPA/Hibernate
 - **Security**: JWT-based authentication with Spring Security
 - **Real-time**: WebSocket for printer connections
@@ -88,7 +113,9 @@ The application follows a standard layered architecture:
 - JWT token authentication with custom filters (`JwtAuthenticationFilter`, `JwtValidationFilter`)
 - Role-based authorization using `@PreAuthorize` annotations
 - Password encoding with BCrypt
-- CORS configuration via `CorsConfig` class (production restricted to `https://lapasadita.app`)
+- CORS configuration via `CorsConfig` class (`security/`): `app.cors.allowed-origins` (env `CORS_ALLOWED_ORIGINS`,
+  prod default `https://lapasadita.app`) takes precedence, then `app.cors.allowed-origin-patterns`; with neither set,
+  dev falls back to permissive patterns (`localhost`, `127.0.0.1`, `192.168.*`, `10.*`)
 - Stateless session management
 - Roles: `ROLE_ADMIN`, `ROLE_CAJERO` (cashier), `ROLE_PEDIDOS` (orders)
 
@@ -100,7 +127,10 @@ The application follows a standard layered architecture:
 - Separate DTOs for Create, Update, Response, and specific operations (ChangePassword, ChangeStatus)
 - Dedicated mapper classes for entity-DTO conversion
 - **Schema source of truth**: `src/main/resources/scriptLP.sql` is the canonical MySQL DDL. Keep entities aligned (
-  column names, nullability, length, indexes) so production `ddl-auto=validate` passes.
+  column names, nullability, length, indexes) so production `ddl-auto=validate` passes. The script ends with a seed
+  `INSERT` for the `admin` employee (`ROLE_ADMIN`, password `123456`, verified BCrypt hash) — local convenience only;
+  change the password in production. Never hand-write or copy BCrypt hashes from tutorials: generate them with
+  `BCryptPasswordEncoder` and verify with `matches()` before inserting.
 
 ## Development Guidelines
 
@@ -131,18 +161,21 @@ com.pasadita.api/
 - Default credentials: root/Root1234 (update in `application.properties` for different environments)
 - Uses Hibernate dialect for MySQL with SQL logging enabled
 - **Production** (`application-prod.properties`): Uses environment variables (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
-  `JWT_SECRET`, `JWT_EXPIRATION`, `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`, `FACTURAPI_KEY`, `R2_ACCESS_KEY`,
+  `JWT_SECRET`, `JWT_EXPIRATION`, `CORS_ALLOWED_ORIGINS`, `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`,
+  `FACTURAPI_KEY`, `R2_ACCESS_KEY`,
   `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`), Hibernate `ddl-auto=validate`, HikariCP pool (max 10)
 - **Facturación (CFDI)**: `facturacion.emisor.*` (rfc, razon-social, regimen-fiscal, codigo-postal) and
   `facturacion.csd.*` (cer-path, key-path, password) are bound to `FacturacionProperties` (under `config/`).
   `facturapi.key` (env `FACTURAPI_KEY`) is the Facturapi secret bearer token; `FacturapiConfig` exposes both the
   `Facturapi` SDK bean and a shared `HttpClient` bean (`facturapiHttpClient`) used for direct REST calls and proxy
-  downloads
+  downloads. Dev `application.properties` provides dummy fallback defaults for `CSD_*` and `FACTURAPI_KEY`, so local
+  runs/tests start without real secrets; production requires the real env vars
 - **Object Storage (Cloudflare R2)**: `cloudflare.r2.*` (access-key, secret-key, endpoint, bucket [default
   `lapasadita-assets`], public-url) bound to `R2Properties` (record under `config/`), all from env vars (`R2_ACCESS_KEY`,
   `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`). `S3Config` exposes the AWS SDK v2 `S3Client` bean
-  (endpoint override, static R2 creds, `Region.US_EAST_1`, path-style access). The bean is built eagerly at startup, so
-  the `R2_*` vars must resolve or context startup fails
+  (endpoint override, static R2 creds, `Region.US_EAST_1`, path-style access). The bean is built eagerly at startup;
+  dev `application.properties` provides dummy fallback defaults for the `R2_*` vars so the context starts without real
+  credentials, but production (`application-prod.properties`) requires the real env vars
 - **Timezone Strategy**: Database stores all dates in UTC (`serverTimezone=UTC` in production)
 - **Date Conversion**: Use `DateTimeUtils` class for timezone handling:
     - `DateTimeUtils.nowUtc()` - Get current time in UTC (for saving to DB)
@@ -219,6 +252,8 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
 - Main test class: `PasaditaApiApplicationTests`
 - Spring Security Test support available
 - REST Docs integration for API documentation
+- Surefire runs with `-XX:+EnableDynamicAgentLoading` (silences the JDK 21 dynamic-agent warning for Mockito/Byte
+  Buddy)
 
 ### Domain Model
 
@@ -274,10 +309,12 @@ Current domains include:
       The flag is computed once per invoice in `appliesResicoIsrRetention(fiscalData)`: true when the emisor régimen is
       RESICO (`626`, read from `FacturacionProperties.emisor().regimenFiscal()`) **and** the receptor RFC is 12 chars
       (persona moral). A 13-char RFC (persona física) gets only IVA-0, no retention
-    - **Endpoints** (`InvoiceController`, all `ROLE_ADMIN`/`ROLE_CAJERO`): `POST /api/invoices` (creates a `PENDIENTE`
-      row), `POST /api/invoices/timbrar` (executes stamping), `GET /api/invoices/sale/{saleId}`,
-      `GET /api/invoices/sale/{saleId}/pdf` and `/xml` (server-side proxy downloads from Facturapi using the bearer
-      secret; require `status == TIMBRADA`)
+    - **Endpoints** (`InvoiceController`, `ROLE_ADMIN`/`ROLE_CAJERO`/`ROLE_PEDIDOS` unless noted):
+      `POST /api/invoices` (creates a `PENDIENTE` row), `GET /api/invoices` (paginated list),
+      `POST /api/invoices/timbrar` (executes stamping), `DELETE /api/invoices/{invoiceId}?motive=` (cancel, `ROLE_ADMIN`
+      only, motive defaults `02`), `GET /api/invoices/sale/{saleId}`, `GET /api/invoices/sale/{saleId}/pdf` and `/xml`
+      (server-side proxy downloads from Facturapi using the bearer secret; require `status == TIMBRADA`),
+      `POST /api/invoices/sale/{saleId}/email?email=` (sends the invoice by email)
 - **Ticket**: Read-only DTO for printing sale receipts via WebSocket
 - **Dashboard**: Analytics/reporting domain — read-only stats aggregated over a date range
     - Uses `DashboardRepository` (extends `JpaRepository<Sale, Long>`) with 15 native SQL queries
