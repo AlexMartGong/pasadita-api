@@ -2,6 +2,7 @@
 # LA PASADITA API - Local testing stack
 # =============================================================================
 # Usage:
+#   cp .env.example .env        # local dummy values; edit if needed
 #   docker build -t pasadita-api:prod .
 #   docker compose -f docker-compose.local.yml up -d
 #
@@ -10,7 +11,8 @@
 #     prod profile's ddl-auto=validate passes on a fresh database. It only
 #     runs on first initialization of the mysql_local_data volume; to re-seed:
 #     docker compose -f docker-compose.local.yml down -v
-#   - All secrets below are local-only dummy values. Never reuse in prod.
+#   - Secrets are interpolated from .env (gitignored), auto-loaded by Docker
+#     Compose from the project root. .env.example is the committed template.
 # =============================================================================
 
 services:
@@ -53,21 +55,20 @@ services:
       DB_PASSWORD: Root1234
       # Local frontend origin — prod default (https://lapasadita.app) stays
       # when this var is absent
-      CORS_ALLOWED_ORIGINS: http://localhost:5173
-      # Must be valid base64 (TokenJwtConfig base64-decodes it); decodes to
-      # 48 bytes. Local-only value
-      JWT_SECRET: EnmHdfgjOTQIVRsLpBV82vc8WkmrnagZQDo5FmLIWfRXx7pcsEbFI8GPdxvvobre
-      JWT_EXPIRATION: "86400000"
-      CSD_CER_PATH: certs/dummy.cer
-      CSD_KEY_PATH: certs/dummy.key
-      CSD_PASSWORD: dummylocal
-      FACTURAPI_KEY: dummylocal
-      R2_ACCESS_KEY: dummylocal
-      R2_SECRET_KEY: dummylocal
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      # Must be valid base64 (TokenJwtConfig base64-decodes it)
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION: ${JWT_EXPIRATION}
+      CSD_CER_PATH: ${CSD_CER_PATH}
+      CSD_KEY_PATH: ${CSD_KEY_PATH}
+      CSD_PASSWORD: ${CSD_PASSWORD}
+      FACTURAPI_KEY: ${FACTURAPI_KEY}
+      R2_ACCESS_KEY: ${R2_ACCESS_KEY}
+      R2_SECRET_KEY: ${R2_SECRET_KEY}
       # Must be a valid URI: the S3Client bean is built eagerly at startup
-      R2_ENDPOINT: https://dummylocal.r2.cloudflarestorage.com
-      R2_BUCKET: lapasadita-assets
-      R2_PUBLIC_URL: https://assets-dummylocal.example.com
+      R2_ENDPOINT: ${R2_ENDPOINT}
+      R2_BUCKET: ${R2_BUCKET}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
 
 volumes:
   mysql_local_data:

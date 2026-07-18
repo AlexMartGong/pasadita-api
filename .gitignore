@@ -49,8 +49,12 @@ Thumbs.db
 *.db
 *.sqlite
 
+# Variables de entorno locales (plantilla .env.example SÍ se versiona)
+.env
+.env.local
+.env.*.local
+
 # Archivos de dependencias y compilación
-.env.example
 check-tables.js
 index.ts
 package.json

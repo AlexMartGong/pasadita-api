@@ -62,6 +62,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Local Docker Stack
 
 ```bash
+# Create the local env file (dummy values, stack boots as-is)
+cp .env.example .env
+
 # Build the prod image and start MySQL (host port 3307) + API (8080)
 docker build -t pasadita-api:prod .
 docker compose -f docker-compose.local.yml up -d
@@ -74,8 +77,10 @@ docker compose -f docker-compose.local.yml down -v
   `./mvnw spring-boot:run` uses the host DB (3306); the dockerized API uses the container DB (`local-db:3306`).
 - `scriptLP.sql` is mounted as a MySQL init script, so the prod profile's `ddl-auto=validate` passes on a fresh
   volume; it seeds the `admin`/`123456` user (see Data Model Patterns).
-- All secrets in `docker-compose.local.yml` are local-only dummies; `JWT_SECRET` must be valid base64
-  (`TokenJwtConfig` base64-decodes it).
+- Secrets in `docker-compose.local.yml` are no longer hardcoded: they're interpolated (`${VAR}`) from a gitignored
+  `.env` in the project root, which Docker Compose auto-loads. Copy `.env.example` (committed template with local-only
+  dummy values) to `.env` and the stack boots without extra setup. `JWT_SECRET` must be valid base64 (`TokenJwtConfig`
+  base64-decodes it).
 
 ## Architecture Overview
 
