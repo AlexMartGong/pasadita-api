@@ -111,7 +111,9 @@ The application follows a standard layered architecture:
 - JWT token authentication with custom filters (`JwtAuthenticationFilter`, `JwtValidationFilter`)
 - Role-based authorization using `@PreAuthorize` annotations
 - Password encoding with BCrypt
-- CORS configuration via `CorsConfig` class (production restricted to `https://lapasadita.app`)
+- CORS configuration via `CorsConfig` class (`security/`): `app.cors.allowed-origins` (env `CORS_ALLOWED_ORIGINS`,
+  prod default `https://lapasadita.app`) takes precedence, then `app.cors.allowed-origin-patterns`; with neither set,
+  dev falls back to permissive patterns (`localhost`, `127.0.0.1`, `192.168.*`, `10.*`)
 - Stateless session management
 - Roles: `ROLE_ADMIN`, `ROLE_CAJERO` (cashier), `ROLE_PEDIDOS` (orders)
 
@@ -157,7 +159,8 @@ com.pasadita.api/
 - Default credentials: root/Root1234 (update in `application.properties` for different environments)
 - Uses Hibernate dialect for MySQL with SQL logging enabled
 - **Production** (`application-prod.properties`): Uses environment variables (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
-  `JWT_SECRET`, `JWT_EXPIRATION`, `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`, `FACTURAPI_KEY`, `R2_ACCESS_KEY`,
+  `JWT_SECRET`, `JWT_EXPIRATION`, `CORS_ALLOWED_ORIGINS`, `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`,
+  `FACTURAPI_KEY`, `R2_ACCESS_KEY`,
   `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`), Hibernate `ddl-auto=validate`, HikariCP pool (max 10)
 - **Facturación (CFDI)**: `facturacion.emisor.*` (rfc, razon-social, regimen-fiscal, codigo-postal) and
   `facturacion.csd.*` (cer-path, key-path, password) are bound to `FacturacionProperties` (under `config/`).
@@ -304,10 +307,12 @@ Current domains include:
       The flag is computed once per invoice in `appliesResicoIsrRetention(fiscalData)`: true when the emisor régimen is
       RESICO (`626`, read from `FacturacionProperties.emisor().regimenFiscal()`) **and** the receptor RFC is 12 chars
       (persona moral). A 13-char RFC (persona física) gets only IVA-0, no retention
-    - **Endpoints** (`InvoiceController`, all `ROLE_ADMIN`/`ROLE_CAJERO`): `POST /api/invoices` (creates a `PENDIENTE`
-      row), `POST /api/invoices/timbrar` (executes stamping), `GET /api/invoices/sale/{saleId}`,
-      `GET /api/invoices/sale/{saleId}/pdf` and `/xml` (server-side proxy downloads from Facturapi using the bearer
-      secret; require `status == TIMBRADA`)
+    - **Endpoints** (`InvoiceController`, `ROLE_ADMIN`/`ROLE_CAJERO`/`ROLE_PEDIDOS` unless noted):
+      `POST /api/invoices` (creates a `PENDIENTE` row), `GET /api/invoices` (paginated list),
+      `POST /api/invoices/timbrar` (executes stamping), `DELETE /api/invoices/{invoiceId}?motive=` (cancel, `ROLE_ADMIN`
+      only, motive defaults `02`), `GET /api/invoices/sale/{saleId}`, `GET /api/invoices/sale/{saleId}/pdf` and `/xml`
+      (server-side proxy downloads from Facturapi using the bearer secret; require `status == TIMBRADA`),
+      `POST /api/invoices/sale/{saleId}/email?email=` (sends the invoice by email)
 - **Ticket**: Read-only DTO for printing sale receipts via WebSocket
 - **Dashboard**: Analytics/reporting domain — read-only stats aggregated over a date range
     - Uses `DashboardRepository` (extends `JpaRepository<Sale, Long>`) with 15 native SQL queries
