@@ -359,7 +359,7 @@ class InvoiceServiceImplTest {
 
     @Test
     void timbrarInvoice_missingClaveProductoSat_throwsBusinessRule() {
-        sale.getSaleDetails().get(0).getProduct().setClaveProductoSat(null);
+        sale.getSaleDetails().getFirst().getProduct().setClaveProductoSat(null);
         when(saleRepository.findWithDetailsById(sale.getId())).thenReturn(Optional.of(sale));
         when(fiscalDataRepository.findById(fiscalData.getFiscalId())).thenReturn(Optional.of(fiscalData));
 
@@ -439,8 +439,8 @@ class InvoiceServiceImplTest {
 
         assertThat(result.getTotalElements()).isEqualTo(1);
         assertThat(result.getContent()).hasSize(1);
-        assertThat(result.getContent().get(0).getInvoiceId()).isEqualTo(900L);
-        assertThat(result.getContent().get(0).getStatus()).isEqualTo("PENDIENTE");
+        assertThat(result.getContent().getFirst().getInvoiceId()).isEqualTo(900L);
+        assertThat(result.getContent().getFirst().getStatus()).isEqualTo("PENDIENTE");
     }
 
     @Test

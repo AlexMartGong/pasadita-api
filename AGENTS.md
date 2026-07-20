@@ -48,11 +48,14 @@ Compact repo-specific guidance for OpenCode sessions.
 - Roles: `ROLE_ADMIN`, `ROLE_CAJERO`, `ROLE_PEDIDOS`.
 - CORS lives in `CorsConfig` (`security/`): `app.cors.allowed-origins` (env `CORS_ALLOWED_ORIGINS`; prod default `https://lapasadita.app`) takes precedence, then `app.cors.allowed-origin-patterns`; if neither is set, dev falls back to permissive patterns (`localhost`, `127.0.0.1`, `192.168.*`, `10.*`).
 
-## Invoicing (CFDI) Quirk
+## Invoicing (CFDI) Quirks
 
 - Uses Facturapi SDK 1.2.0 for customer/product creation, but **the invoice POST bypasses the SDK** because its deserializer is incompatible with CFDI 4.0 responses.
 - Direct REST call is made via JDK `HttpClient` bean (`facturapiHttpClient`) with `Authorization: Bearer ${facturapi.key}`.
-- `FacturapiConfig` exposes both the SDK bean and the shared `HttpClient` bean.
+- `FacturapiConfig` exposes both the SDK bean and the shared `HttpClient` bean (`@Bean(destroyMethod = "close")` — singleton, never close per call).
+- **Row reuse** (`Invoice.sale_id` is UNIQUE): `createInvoiceRequest` and `timbrarInvoice` share `findOrCreatePendingInvoice` — an existing `PENDIENTE`/`ERROR` row is updated in place (fiscal data refreshed, status reset to `PENDIENTE`); `TIMBRADA`/`CANCELADA` are finalized and throw `BusinessRuleException`. Never insert a second `Invoice` for the same sale.
+- **Transaction isolation**: `timbrarInvoice`/`cancelInvoice`/`sendInvoiceEmail` are deliberately **not** `@Transactional` — remote Facturapi calls (20 s timeouts) must not hold a DB connection. Three phases: persist `PENDIENTE` (short repo tx) → remote call outside tx → persist `TIMBRADA`/`ERROR` (short tx). `SaleRepository.findWithDetailsById` `@EntityGraph` prefetches everything, so no lazy loads outside a tx. Error status persists via inner `InvoiceErrorPersister` (`REQUIRES_NEW`).
+- **Error transparency**: `BusinessRuleException` from stamping (e.g. Facturapi HTTP 4xx body) is rethrown as-is after `markAsError` — do not wrap it in a generic message.
 
 ## Object Storage (Cloudflare R2)
 
@@ -69,6 +72,12 @@ Compact repo-specific guidance for OpenCode sessions.
 - Line amounts (`setScale(2, HALF_UP)` after each multiply): `subtotal = price × qty`, `discount = appliedUnitDiscount × qty`, `total = (price − appliedUnitDiscount) × qty`.
 - Sale `discountAmount` is derived (Σ line discounts); the client-sent value is ignored. `total = subtotal − discountAmount`.
 - Only `save` enforces the rule; `update()` re-inserts details without recomputation (known gap).
+
+## Product Best-Seller Ordering
+
+- `GET /api/products/all` ranks products by units sold in the **current month** (Mexico time); unsold products still appear, ranked last. No HTTP params — the range is computed server-side.
+- `ProductServiceImpl.findAll()` builds month bounds from `DateTimeUtils.nowMexico()` (day 1 `00:00` → last day `LocalTime.MAX`) and converts with `toUtc()` before calling `ProductRepository.findAllOrderByTotalSoldDesc(startDate, endDate)` (`sales.datetime` is UTC).
+- The JPQL filters **inside the aggregate** (`SUM(CASE WHEN s.datetime BETWEEN ... THEN sd.quantity ELSE 0 END)`), keeping the `LEFT JOIN`s. Do not move the `BETWEEN` to the join `ON` clause — out-of-month `SaleDetail` rows would still match the product and be summed.
 
 ## Exception Handling
 

@@ -216,7 +216,7 @@ PUT    /api/employees/change-status/{id} - Change employee status
 ### Products
 
 ```
-GET    /api/products/all - Get all products
+GET    /api/products/all - Get all products (ordered by units sold in the current month, Mexico time; unsold products last)
 GET    /api/products/{id} - Get product by ID
 POST   /api/products/save - Create new product
 PUT    /api/products/update/{id} - Update product
@@ -285,6 +285,10 @@ GET    /api/invoices/sale/{saleId}/pdf - Download stamped invoice PDF
 GET    /api/invoices/sale/{saleId}/xml - Download stamped invoice XML
 POST   /api/invoices/sale/{saleId}/email?email={email} - Email invoice to recipient
 ```
+
+Each sale can have at most one invoice: a previous `PENDIENTE`/`ERROR` attempt is reused and re-stamped in place,
+while `TIMBRADA`/`CANCELADA` invoices are final and reject new requests. Stamping errors returned by Facturapi are
+surfaced verbatim in the API error response.
 
 ### Dashboard (ADMIN only)
 

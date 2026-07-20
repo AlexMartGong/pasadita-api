@@ -7,6 +7,7 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface ProductRepository extends CrudRepository<Product, Long> {
@@ -17,7 +18,14 @@ public interface ProductRepository extends CrudRepository<Product, Long> {
 
     List<Product> findByActiveTrue();
 
-    @Query("SELECT p FROM Product p LEFT JOIN SaleDetail sd ON sd.product = p GROUP BY p ORDER BY COALESCE(SUM(sd.quantity), 0) DESC")
-    List<Product> findAllOrderByTotalSoldDesc();
+    @Query("""
+            SELECT p FROM Product p
+            LEFT JOIN SaleDetail sd ON sd.product = p
+            LEFT JOIN sd.sale s
+            GROUP BY p
+            ORDER BY COALESCE(SUM(CASE WHEN s.datetime BETWEEN :startDate AND :endDate THEN sd.quantity ELSE 0 END), 0) DESC
+            """)
+    List<Product> findAllOrderByTotalSoldDesc(@Param("startDate") LocalDateTime startDate,
+                                              @Param("endDate") LocalDateTime endDate);
 
 }

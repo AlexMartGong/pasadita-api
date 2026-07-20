@@ -52,7 +52,7 @@ public class SaleServiceImpl implements SaleService {
     @Override
     @Transactional(readOnly = true)
     public List<SaleResponseDto> findAll() {
-        List<Sale> sales = (List<Sale>) saleRepository.findAll();
+        List<Sale> sales = saleRepository.findAllByOrderByIdDesc();
         return sales.stream()
                 .map(saleMapper::toResponseDto)
                 .collect(Collectors.toList());
