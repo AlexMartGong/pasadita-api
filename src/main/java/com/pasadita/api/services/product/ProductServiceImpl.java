@@ -5,11 +5,15 @@ import com.pasadita.api.entities.Product;
 import com.pasadita.api.exceptions.EntityNotFoundException;
 import com.pasadita.api.repositories.ProductRepository;
 import com.pasadita.api.services.storage.StorageService;
+import com.pasadita.api.utils.DateTimeUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -25,7 +29,14 @@ public class ProductServiceImpl implements ProductService {
     @Transactional(readOnly = true)
     @Override
     public List<ProductResponseDto> findAll() {
-        return productRepository.findAllOrderByTotalSoldDesc()
+        LocalDateTime nowMexico = DateTimeUtils.nowMexico();
+        LocalDateTime startOfMonthMexico = nowMexico.withDayOfMonth(1).toLocalDate().atStartOfDay();
+        LocalDateTime endOfMonthMexico = nowMexico.toLocalDate()
+                .with(TemporalAdjusters.lastDayOfMonth())
+                .atTime(LocalTime.MAX);
+        return productRepository.findAllOrderByTotalSoldDesc(
+                        DateTimeUtils.toUtc(startOfMonthMexico),
+                        DateTimeUtils.toUtc(endOfMonthMexico))
                 .stream()
                 .map(productMapper::toResponseDto)
                 .collect(Collectors.toList());

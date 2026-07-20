@@ -167,8 +167,9 @@ com.pasadita.api/
 - **Facturación (CFDI)**: `facturacion.emisor.*` (rfc, razon-social, regimen-fiscal, codigo-postal) and
   `facturacion.csd.*` (cer-path, key-path, password) are bound to `FacturacionProperties` (under `config/`).
   `facturapi.key` (env `FACTURAPI_KEY`) is the Facturapi secret bearer token; `FacturapiConfig` exposes both the
-  `Facturapi` SDK bean and a shared `HttpClient` bean (`facturapiHttpClient`) used for direct REST calls and proxy
-  downloads. Dev `application.properties` provides dummy fallback defaults for `CSD_*` and `FACTURAPI_KEY`, so local
+  `Facturapi` SDK bean and a shared `HttpClient` bean (`facturapiHttpClient`, declared with
+  `@Bean(destroyMethod = "close")` — it's a singleton, never close it per call; the container closes it on
+  shutdown) used for direct REST calls and proxy downloads. Dev `application.properties` provides dummy fallback defaults for `CSD_*` and `FACTURAPI_KEY`, so local
   runs/tests start without real secrets; production requires the real env vars
 - **Object Storage (Cloudflare R2)**: `cloudflare.r2.*` (access-key, secret-key, endpoint, bucket [default
   `lapasadita-assets`], public-url) bound to `R2Properties` (record under `config/`), all from env vars (`R2_ACCESS_KEY`,
@@ -250,7 +251,9 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
 
 - Uses Spring Boot Test framework
 - Main test class: `PasaditaApiApplicationTests`
-- Pure Mockito unit tests (no Spring context) for service rules: `InvoiceServiceImplTest`, `SaleServiceImplTest`
+- Pure Mockito unit tests (no Spring context) for service rules: `InvoiceServiceImplTest` (stamping happy path,
+  RESICO ISR retention, SAT catalog validation, `PENDIENTE`/`ERROR` row reuse vs. finalized rejection, Facturapi
+  rejection message transparency + `markAsError`, cancel/email flows), `SaleServiceImplTest`
   (discount rule: range bounds, cap, per-quantity accumulation, derived sale totals)
 - Spring Security Test support available
 - REST Docs integration for API documentation
@@ -265,6 +268,14 @@ Current domains include:
 - **Customer**: Customer management with customer types
 - **CustomerType**: Customer categorization
 - **Product**: Inventory with categories and unit measures
+    - **Best-seller ordering (current month)**: `GET /api/products/all` → `ProductServiceImpl.findAll()` →
+      `ProductRepository.findAllOrderByTotalSoldDesc(startDate, endDate)` ranks products by units sold in the
+      **current month** (Mexico time). The service computes the month bounds (day 1 `00:00` → last day
+      `LocalTime.MAX`) from `DateTimeUtils.nowMexico()` and converts them with `toUtc()` before querying
+      (`sales.datetime` is UTC). The JPQL keeps `LEFT JOIN`s and filters inside the aggregate —
+      `SUM(CASE WHEN s.datetime BETWEEN :startDate AND :endDate THEN sd.quantity ELSE 0 END)` — so out-of-month
+      sales don't count but products with zero sales still appear (ranked last). No HTTP params; endpoint contract
+      unchanged. Don't move the `BETWEEN` into the join `ON` — quantities from other months would be summed again
     - `claveProductoSat` (varchar 8) — SAT product/service code, optional, used for CFDI invoicing
     - `imageUrl` (varchar 255, nullable) — public URL of the product image in Cloudflare R2; set only via the image
       upload endpoint (see Object Storage), exposed in `ProductResponseDto`. `POST /api/products/{id}/image`
@@ -313,12 +324,27 @@ Current domains include:
     - OneToOne with `Sale` (unique), ManyToOne with `CustomerFiscalData`
     - Status enum (`InvoiceStatus`): `PENDIENTE`, `TIMBRADA`, `CANCELADA`, `ERROR` — defaults to `PENDIENTE`
     - Tracks `uuid` (SAT folio), `xmlUrl`, `pdfUrl`, `createdAt`, `timbradoAt`
-    - Service rules: sale must be paid, fiscal data must be active, no duplicate active invoice per sale
+    - Service rules: sale must be paid, fiscal data must be active
+    - **Row reuse (sale_id is UNIQUE)**: both `createInvoiceRequest` and `timbrarInvoice` go through
+      `findOrCreatePendingInvoice` — an existing `PENDIENTE`/`ERROR` row for the sale is **updated in place**
+      (fiscal data refreshed, status reset to `PENDIENTE`) instead of inserting a new row (which would hit the
+      unique constraint → `DataIntegrityViolationException` 500); `TIMBRADA`/`CANCELADA` are finalized and throw
+      `BusinessRuleException`
     - DTOs/services under `dto/invoice/` and `services/invoice/`
     - **Stamping flow** (`InvoiceServiceImpl.timbrarInvoice`): customer + product creation use the Facturapi Java SDK,
       but the invoice POST is sent through the JDK `HttpClient` (`POST https://www.facturapi.io/v2/invoices` with
       `Authorization: Bearer ${facturapi.key}`) and parsed via Jackson `JsonNode`. The SDK 1.2.0 invoice deserializer
       is incompatible with CFDI 4.0 responses, so it is bypassed for that step
+    - **Transaction isolation**: `timbrarInvoice`, `cancelInvoice`, and `sendInvoiceEmail` are deliberately **not**
+      `@Transactional` — Facturapi SDK/HTTP calls (up to 20 s timeout) must not hold a MySQL/Hikari connection.
+      Flow is three phases: persist `PENDIENTE` (short implicit repository tx), remote call outside any tx, persist
+      `TIMBRADA`/`ERROR` result (short tx). Safe because `SaleRepository.findWithDetailsById` eager-fetches via
+      `@EntityGraph` everything the stamping path touches (no lazy loads outside a tx). `createInvoiceRequest` and
+      the read-only lookups keep `@Transactional` (pure DB). Error status is persisted via the inner
+      `InvoiceErrorPersister` (`REQUIRES_NEW`)
+    - **Error transparency**: in `timbrarInvoice`, `BusinessRuleException` (e.g. Facturapi HTTP 4xx body) is caught,
+      the invoice is marked `ERROR`, and the exception is **rethrown as-is** so the client sees the exact rejection
+      reason; only truly unexpected `RuntimeException`s get wrapped as "Error inesperado al timbrar CFDI"
     - **RESICO ISR retention**: `buildProductPayload(detail, applyIsrRetention)` conditionally appends a 1.25% ISR
       retention to the product `taxes` array as `{type:ISR, rate:0.0125, factor:Tasa, withholding:true}` (Facturapi's
       convention — `withholding:true` lands it in CFDI `Retenciones`; a separate `retentions` key would be ignored).

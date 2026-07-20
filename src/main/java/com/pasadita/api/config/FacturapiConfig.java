@@ -24,7 +24,8 @@ public class FacturapiConfig {
                 .build();
     }
 
-    @Bean
+    // Shared singleton — never close per call; the container closes it on context shutdown.
+    @Bean(destroyMethod = "close")
     public HttpClient facturapiHttpClient() {
         return HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(20))

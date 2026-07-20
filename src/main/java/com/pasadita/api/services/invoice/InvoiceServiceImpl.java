@@ -48,9 +48,6 @@ import java.util.Set;
 @Service
 public class InvoiceServiceImpl implements InvoiceService {
 
-    private static final Set<InvoiceStatus> BLOCKING_STATUSES =
-            Set.of(InvoiceStatus.PENDIENTE, InvoiceStatus.TIMBRADA);
-
     private static final Set<InvoiceStatus> FINALIZED_STATUSES =
             Set.of(InvoiceStatus.TIMBRADA, InvoiceStatus.CANCELADA);
 
@@ -103,17 +100,17 @@ public class InvoiceServiceImpl implements InvoiceService {
         Sale sale = loadAndValidatePaidSale(dto.getSaleId());
         CustomerFiscalData fiscalData = loadAndValidateFiscalData(dto.getFiscalId());
 
-        if (invoiceRepository.existsBySaleIdAndStatusIn(sale.getId(), BLOCKING_STATUSES)) {
-            throw new BusinessRuleException("Sale already has an invoice in progress or stamped");
-        }
-
-        Invoice invoice = invoiceMapper.toEntity(dto, sale, fiscalData);
-        Invoice saved = invoiceRepository.save(invoice);
+        Invoice saved = findOrCreatePendingInvoice(dto, sale, fiscalData);
         return Optional.of(invoiceMapper.toResponseDto(saved));
     }
 
+    /**
+     * Deliberately NOT @Transactional: the Facturapi SDK/HTTP calls can take up to 20 s and must
+     * not hold a MySQL connection. Flow is three phases — persist PENDIENTE (short repository tx),
+     * remote stamping outside any tx, then persist the TIMBRADA/ERROR outcome (short tx). The
+     * Sale is fully fetched via @EntityGraph, so no lazy loading happens outside a transaction.
+     */
     @Override
-    @Transactional
     public Optional<InvoiceResponseDto> timbrarInvoice(InvoiceCreateDto dto) {
         Sale sale = saleRepository.findWithDetailsById(dto.getSaleId())
                 .orElseThrow(() -> new EntityNotFoundException("Sale not found with id: " + dto.getSaleId()));
@@ -137,6 +134,10 @@ public class InvoiceServiceImpl implements InvoiceService {
                     sale.getId(), ex.getStatusCode(), ex.getErrorCode(), ex.getErrorPath(), ex.getMessage());
             invoiceErrorPersister.markAsError(invoice.getInvoiceId());
             throw new BusinessRuleException("Error al timbrar CFDI: " + ex.getMessage());
+        } catch (BusinessRuleException ex) {
+            log.error("Stamping rejected for sale {}: {}", sale.getId(), ex.getMessage());
+            invoiceErrorPersister.markAsError(invoice.getInvoiceId());
+            throw ex;
         } catch (RuntimeException ex) {
             log.error("Unexpected failure while stamping CFDI for sale {}", sale.getId(), ex);
             invoiceErrorPersister.markAsError(invoice.getInvoiceId());
@@ -158,8 +159,9 @@ public class InvoiceServiceImpl implements InvoiceService {
         return invoiceRepository.findAll(pageable).map(invoiceMapper::toResponseDto);
     }
 
+    // Not @Transactional: the Facturapi cancel call must run without holding a DB connection;
+    // the final save is its own short repository transaction.
     @Override
-    @Transactional
     public InvoiceResponseDto cancelInvoice(Long invoiceId, String motive) {
         Invoice invoice = invoiceRepository.findWithDetailsByInvoiceId(invoiceId)
                 .orElseThrow(() -> new EntityNotFoundException("Invoice not found with id: " + invoiceId));
@@ -179,8 +181,9 @@ public class InvoiceServiceImpl implements InvoiceService {
         return invoiceMapper.toResponseDto(persisted);
     }
 
+    // Not @Transactional: only one repository read, then a remote HTTP call that must not hold
+    // a DB connection.
     @Override
-    @Transactional(readOnly = true)
     public void sendInvoiceEmail(Long saleId, String targetEmail) {
         if (!StringUtils.hasText(targetEmail)) {
             throw new BusinessRuleException("Target email is required");
@@ -353,10 +356,10 @@ public class InvoiceServiceImpl implements InvoiceService {
             }
             return objectMapper.readTree(response.body());
         } catch (IOException ex) {
-            throw new RuntimeException("Falla I/O al timbrar CFDI vía Facturapi", ex);
+            throw new BusinessRuleException("Falla I/O al timbrar CFDI vía Facturapi: " + ex.getMessage());
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("Timbrado CFDI interrumpido", ex);
+            throw new BusinessRuleException("Timbrado CFDI interrumpido");
         }
     }
 

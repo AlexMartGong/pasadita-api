@@ -271,6 +271,80 @@ class InvoiceServiceImplTest {
     }
 
     @Test
+    void createInvoiceRequest_existingErrorInvoice_reusesSameRow() {
+        persistedInvoice.setStatus(InvoiceStatus.ERROR);
+        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+        when(fiscalDataRepository.findById(fiscalData.getFiscalId())).thenReturn(Optional.of(fiscalData));
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.of(persistedInvoice));
+        when(invoiceRepository.save(any(Invoice.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(invoiceMapper.toResponseDto(any(Invoice.class)))
+                .thenAnswer(inv -> InvoiceResponseDto.builder()
+                        .invoiceId(((Invoice) inv.getArgument(0)).getInvoiceId())
+                        .status(((Invoice) inv.getArgument(0)).getStatus().name())
+                        .build());
+
+        var response = service.createInvoiceRequest(dto);
+
+        assertThat(response).isPresent();
+        assertThat(response.get().getInvoiceId()).isEqualTo(900L);
+        assertThat(response.get().getStatus()).isEqualTo("PENDIENTE");
+        assertThat(persistedInvoice.getStatus()).isEqualTo(InvoiceStatus.PENDIENTE);
+        assertThat(persistedInvoice.getCustomerFiscalData()).isSameAs(fiscalData);
+
+        verify(invoiceRepository).save(persistedInvoice);
+        verify(invoiceMapper, never()).toEntity(any(), any(), any());
+    }
+
+    @Test
+    void createInvoiceRequest_existingTimbradaInvoice_throwsBusinessRule() {
+        persistedInvoice.setStatus(InvoiceStatus.TIMBRADA);
+        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+        when(fiscalDataRepository.findById(fiscalData.getFiscalId())).thenReturn(Optional.of(fiscalData));
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.of(persistedInvoice));
+
+        assertThatThrownBy(() -> service.createInvoiceRequest(dto))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("finalized");
+
+        verify(invoiceRepository, never()).save(any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void timbrarInvoice_facturapiHttpRejects_preservesRejectionMessage_andMarksError() throws Exception {
+        when(saleRepository.findWithDetailsById(sale.getId())).thenReturn(Optional.of(sale));
+        when(fiscalDataRepository.findById(fiscalData.getFiscalId())).thenReturn(Optional.of(fiscalData));
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.empty());
+        when(invoiceMapper.toEntity(eq(dto), eq(sale), eq(fiscalData))).thenReturn(persistedInvoice);
+        when(invoiceRepository.save(any(Invoice.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        when(facturapi.customers()).thenReturn(customersResource);
+        when(facturapi.products()).thenReturn(productsResource);
+
+        io.facturapi.models.Customer remoteCustomer = new io.facturapi.models.Customer();
+        remoteCustomer.setId("cus_1");
+        when(customersResource.create(anyMap(), any())).thenReturn(remoteCustomer);
+
+        io.facturapi.models.Product remoteProduct = new io.facturapi.models.Product();
+        remoteProduct.setId("prod_1");
+        when(productsResource.create(anyMap())).thenReturn(remoteProduct);
+
+        HttpResponse<String> badResponse = (HttpResponse<String>) mock(HttpResponse.class);
+        when(badResponse.statusCode()).thenReturn(400);
+        when(badResponse.body()).thenReturn("{\"message\":\"CFDI40147 - uso CFDI inválido\"}");
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(badResponse);
+
+        assertThatThrownBy(() -> service.timbrarInvoice(dto))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("Facturapi rechazó factura")
+                .hasMessageContaining("CFDI40147")
+                .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("Error inesperado"));
+
+        verify(invoiceErrorPersister).markAsError(persistedInvoice.getInvoiceId());
+    }
+
+    @Test
     void timbrarInvoice_unpaidSale_throwsBusinessRule_andSkipsFacturapi() {
         sale.setPaid(false);
         when(saleRepository.findWithDetailsById(sale.getId())).thenReturn(Optional.of(sale));
@@ -285,7 +359,7 @@ class InvoiceServiceImplTest {
 
     @Test
     void timbrarInvoice_missingClaveProductoSat_throwsBusinessRule() {
-        sale.getSaleDetails().get(0).getProduct().setClaveProductoSat(null);
+        sale.getSaleDetails().getFirst().getProduct().setClaveProductoSat(null);
         when(saleRepository.findWithDetailsById(sale.getId())).thenReturn(Optional.of(sale));
         when(fiscalDataRepository.findById(fiscalData.getFiscalId())).thenReturn(Optional.of(fiscalData));
 
@@ -365,8 +439,8 @@ class InvoiceServiceImplTest {
 
         assertThat(result.getTotalElements()).isEqualTo(1);
         assertThat(result.getContent()).hasSize(1);
-        assertThat(result.getContent().get(0).getInvoiceId()).isEqualTo(900L);
-        assertThat(result.getContent().get(0).getStatus()).isEqualTo("PENDIENTE");
+        assertThat(result.getContent().getFirst().getInvoiceId()).isEqualTo(900L);
+        assertThat(result.getContent().getFirst().getStatus()).isEqualTo("PENDIENTE");
     }
 
     @Test
