@@ -62,6 +62,14 @@ Compact repo-specific guidance for OpenCode sessions.
 - `StorageService` / `S3StorageServiceImpl` (under `services/storage/`): `uploadFile(MultipartFile, folder)` stores under `folder/<uuid>.<ext>`, returns `publicUrl + "/" + key`. Wraps `IOException`/`SdkException` in `BusinessRuleException` (400).
 - **Product images**: `POST /api/products/{id}/image` (`ROLE_ADMIN`/`ROLE_CAJERO`) uploads to the `products` folder and persists `Product.imageUrl` (`image_url varchar(255)`, exposed in `ProductResponseDto`).
 
+## Sales Discount Rule ("Regla de Alex")
+
+- `SaleServiceImpl.save` treats `SaleDetailCreateDto.discount` as a **per-unit** discount.
+- Unit price in **[1, 10] inclusive** (`compareTo`): discount forced to `0`. Any other price: capped at `unitPrice` (net unit price never negative).
+- Line amounts (`setScale(2, HALF_UP)` after each multiply): `subtotal = price × qty`, `discount = appliedUnitDiscount × qty`, `total = (price − appliedUnitDiscount) × qty`.
+- Sale `discountAmount` is derived (Σ line discounts); the client-sent value is ignored. `total = subtotal − discountAmount`.
+- Only `save` enforces the rule; `update()` re-inserts details without recomputation (known gap).
+
 ## Exception Handling
 
 - Centralized in `GlobalExceptionHandler` (`@RestControllerAdvice`).
@@ -70,7 +78,7 @@ Compact repo-specific guidance for OpenCode sessions.
 ## Testing
 
 - Current test suite is minimal. `PasaditaApiApplicationTests` only loads the context.
-- There is an `InvoiceServiceImplTest`, but most domains lack unit/integration tests.
+- Pure Mockito unit tests exist for `InvoiceServiceImplTest` and `SaleServiceImplTest` (discount rule), but most domains still lack unit/integration tests.
 - Surefire runs with `-XX:+EnableDynamicAgentLoading` (JDK 21 dynamic-agent warning, Mockito/Byte Buddy).
 
 ## CI/CD
