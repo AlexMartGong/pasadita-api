@@ -35,6 +35,9 @@ import java.util.stream.Collectors;
 @Transactional
 public class SaleServiceImpl implements SaleService {
 
+    private static final BigDecimal NO_DISCOUNT_PRICE_LOWER_BOUND = BigDecimal.ONE;
+    private static final BigDecimal NO_DISCOUNT_PRICE_UPPER_BOUND = new BigDecimal("10");
+
     private final SaleRepository saleRepository;
     private final EmployeeRepository employeeRepository;
     private final CustomerRepository customerRepository;
@@ -61,32 +64,36 @@ public class SaleServiceImpl implements SaleService {
         Customer customer = findCustomerById(saleCreateDto.getCustomerId());
         PaymentMethod paymentMethod = findPaymentMethodById(saleCreateDto.getPaymentMethodId());
         BigDecimal saleSubtotal = BigDecimal.ZERO;
+        BigDecimal saleDiscountTotal = BigDecimal.ZERO;
 
         for (var detailDto : saleCreateDto.getSaleDetails()) {
             Product product = productRepository.findById(detailDto.getProductId())
                     .orElseThrow(() -> new EntityNotFoundException("Product not found with id: " + detailDto.getProductId()));
 
             BigDecimal unitPrice = product.getPrice();
-            BigDecimal detailSubtotal = detailDto.getQuantity()
-                    .multiply(unitPrice)
-                    .setScale(2, RoundingMode.HALF_UP);
+            BigDecimal appliedDiscount = resolveApplicableUnitDiscount(unitPrice, detailDto.getDiscount());
+            BigDecimal finalUnitPrice = unitPrice.subtract(appliedDiscount);
+            BigDecimal quantity = detailDto.getQuantity();
 
-            BigDecimal discount = detailDto.getDiscount() != null ? detailDto.getDiscount() : BigDecimal.ZERO;
-            BigDecimal detailTotal = detailSubtotal.subtract(discount).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal detailSubtotal = unitPrice.multiply(quantity).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal detailDiscount = appliedDiscount.multiply(quantity).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal detailTotal = finalUnitPrice.multiply(quantity).setScale(2, RoundingMode.HALF_UP);
 
             detailDto.setUnitPrice(unitPrice);
+            detailDto.setDiscount(detailDiscount);
             detailDto.setSubtotal(detailSubtotal);
             detailDto.setTotal(detailTotal);
 
             saleSubtotal = saleSubtotal.add(detailSubtotal);
+            saleDiscountTotal = saleDiscountTotal.add(detailDiscount);
         }
 
         saleSubtotal = saleSubtotal.setScale(2, RoundingMode.HALF_UP);
-        BigDecimal discountAmount = saleCreateDto.getDiscountAmount() != null
-                ? saleCreateDto.getDiscountAmount() : BigDecimal.ZERO;
-        BigDecimal saleTotal = saleSubtotal.subtract(discountAmount).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal saleDiscount = saleDiscountTotal.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal saleTotal = saleSubtotal.subtract(saleDiscount).setScale(2, RoundingMode.HALF_UP);
 
         saleCreateDto.setSubtotal(saleSubtotal);
+        saleCreateDto.setDiscountAmount(saleDiscount);
         saleCreateDto.setTotal(saleTotal);
 
         if (saleCreateDto.getAmountTendered().compareTo(saleTotal) < 0) {
@@ -111,6 +118,16 @@ public class SaleServiceImpl implements SaleService {
         return Optional.ofNullable(saleMapper.toResponseDto(savedSale));
     }
 
+    private BigDecimal resolveApplicableUnitDiscount(BigDecimal unitPrice, BigDecimal requestedUnitDiscount) {
+        BigDecimal requested = requestedUnitDiscount != null ? requestedUnitDiscount : BigDecimal.ZERO;
+        boolean isInNoDiscountRange = unitPrice.compareTo(NO_DISCOUNT_PRICE_LOWER_BOUND) >= 0
+                && unitPrice.compareTo(NO_DISCOUNT_PRICE_UPPER_BOUND) <= 0;
+        if (isInNoDiscountRange) {
+            return BigDecimal.ZERO;
+        }
+        return requested.min(unitPrice);
+    }
+
     @Override
     public Optional<SaleResponseDto> update(Long id, SaleUpdateDto saleUpdateDto) {
         Sale existingSale = saleRepository.findById(id)
@@ -123,10 +140,8 @@ public class SaleServiceImpl implements SaleService {
         saleMapper.updateEntity(existingSale, saleUpdateDto, employee, customer, paymentMethod);
         Sale updatedSale = saleRepository.save(existingSale);
 
-        // Delete existing sale details
         saleDetailRepository.deleteBySaleId(existingSale.getId());
 
-        // Create new sale details
         saleUpdateDto.getSaleDetails().forEach(saleDetailDto -> {
             saleDetailDto.setSaleId(updatedSale.getId());
             saleDetailService.save(saleDetailDto);

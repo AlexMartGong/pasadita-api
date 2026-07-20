@@ -250,6 +250,8 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
 
 - Uses Spring Boot Test framework
 - Main test class: `PasaditaApiApplicationTests`
+- Pure Mockito unit tests (no Spring context) for service rules: `InvoiceServiceImplTest`, `SaleServiceImplTest`
+  (discount rule: range bounds, cap, per-quantity accumulation, derived sale totals)
 - Spring Security Test support available
 - REST Docs integration for API documentation
 - Surefire runs with `-XX:+EnableDynamicAgentLoading` (silences the JDK 21 dynamic-agent warning for Mockito/Byte
@@ -279,9 +281,21 @@ Current domains include:
       receives ESC/POS data, so skipping the ticket would leave it shut on cash sales. When `printTicket` is `false`
       **and** `paymentMethodId == 1L` (cash), `saveSale` instead dispatches a lightweight `OPEN_DRAWER` WebSocket
       command (no ticket) via `sendOpenDrawerAsync`
+    - **Discount rule ("Regla de Alex")** — enforced in `SaleServiceImpl.save` via
+      `resolveApplicableUnitDiscount(unitPrice, requestedUnitDiscount)`:
+        - `SaleDetailCreateDto.discount` is interpreted as a **per-unit** discount (not a line amount)
+        - Unit price within **[1, 10] inclusive** (`compareTo`, scale-insensitive): discount forced to `0` (protects
+          cheap by-portion products like cilantro from being given away)
+        - Any other unit price: discount capped at `unitPrice` via `min()`, so the net unit price never goes negative
+        - Persisted line amounts (each `setScale(2, HALF_UP)` after multiplying): `subtotal = unitPrice × qty`,
+          `discount = appliedUnitDiscount × qty` (accumulated per line), `total = (unitPrice − appliedUnitDiscount) × qty`
+        - Sale-level `discountAmount` is **derived** as Σ of corrected line discounts — the client-sent
+          `discountAmount` is ignored (service is the source of truth, same as `subtotal`/`total`/`unitPrice`);
+          `total = subtotal − discountAmount`
+        - Applies only to `save`; `update()` re-inserts details without recomputing amounts (known gap)
 - **SaleDetail**: Line items for sales
     - ManyToOne relationships with Sale and Product
-    - Tracks quantity, unit price, subtotal, discount, and total
+    - Tracks quantity, unit price, subtotal, discount, and total (all server-computed under the discount rule above)
 - **PaymentMethod**: Payment method catalog (cash, card, etc.)
     - `claveFormaPagoSat` (varchar 2) — SAT forma de pago code (e.g. `01` cash, `04` card). No CRUD layer; managed via
       SQL/seed

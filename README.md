@@ -425,8 +425,9 @@ This will generate API documentation using Spring REST Docs in the `target/gener
 - **Customer**: Customer information
 - **CustomerType**: Customer categorization
 - **CustomerFiscalData**: Tax data for CFDI invoicing (RFC, régimen fiscal, uso CFDI)
-- **Sale**: Sales transactions
-- **SaleDetail**: Line items for sales
+- **Sale**: Sales transactions — totals are server-computed; a per-unit discount rule blocks discounts on products
+  priced $1–$10 (inclusive) and caps any other discount at the unit price so line totals never go negative
+- **SaleDetail**: Line items for sales (quantity, unit price, accumulated discount, total)
 - **DeliveryOrder**: Delivery tracking
 - **PaymentMethod**: Payment methods with SAT forma de pago codes
 - **Invoice**: CFDI invoices tied to sales (status, SAT UUID, XML/PDF URLs)
