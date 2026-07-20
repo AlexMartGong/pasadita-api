@@ -65,6 +65,7 @@ public class SaleServiceImpl implements SaleService {
         PaymentMethod paymentMethod = findPaymentMethodById(saleCreateDto.getPaymentMethodId());
         BigDecimal saleSubtotal = BigDecimal.ZERO;
         BigDecimal saleDiscountTotal = BigDecimal.ZERO;
+        BigDecimal saleTotal = BigDecimal.ZERO;
 
         for (var detailDto : saleCreateDto.getSaleDetails()) {
             Product product = productRepository.findById(detailDto.getProductId())
@@ -72,12 +73,11 @@ public class SaleServiceImpl implements SaleService {
 
             BigDecimal unitPrice = product.getPrice();
             BigDecimal appliedDiscount = resolveApplicableUnitDiscount(unitPrice, detailDto.getDiscount());
-            BigDecimal finalUnitPrice = unitPrice.subtract(appliedDiscount);
             BigDecimal quantity = detailDto.getQuantity();
 
             BigDecimal detailSubtotal = unitPrice.multiply(quantity).setScale(2, RoundingMode.HALF_UP);
             BigDecimal detailDiscount = appliedDiscount.multiply(quantity).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal detailTotal = finalUnitPrice.multiply(quantity).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal detailTotal = detailSubtotal.subtract(detailDiscount);
 
             detailDto.setUnitPrice(unitPrice);
             detailDto.setDiscount(detailDiscount);
@@ -86,11 +86,12 @@ public class SaleServiceImpl implements SaleService {
 
             saleSubtotal = saleSubtotal.add(detailSubtotal);
             saleDiscountTotal = saleDiscountTotal.add(detailDiscount);
+            saleTotal = saleTotal.add(detailTotal);
         }
 
         saleSubtotal = saleSubtotal.setScale(2, RoundingMode.HALF_UP);
         BigDecimal saleDiscount = saleDiscountTotal.setScale(2, RoundingMode.HALF_UP);
-        BigDecimal saleTotal = saleSubtotal.subtract(saleDiscount).setScale(2, RoundingMode.HALF_UP);
+        saleTotal = saleTotal.setScale(2, RoundingMode.HALF_UP);
 
         saleCreateDto.setSubtotal(saleSubtotal);
         saleCreateDto.setDiscountAmount(saleDiscount);
@@ -125,7 +126,7 @@ public class SaleServiceImpl implements SaleService {
         if (isInNoDiscountRange) {
             return BigDecimal.ZERO;
         }
-        return requested.min(unitPrice);
+        return requested.max(BigDecimal.ZERO).min(unitPrice);
     }
 
     @Override

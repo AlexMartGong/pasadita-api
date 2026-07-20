@@ -286,12 +286,14 @@ Current domains include:
         - `SaleDetailCreateDto.discount` is interpreted as a **per-unit** discount (not a line amount)
         - Unit price within **[1, 10] inclusive** (`compareTo`, scale-insensitive): discount forced to `0` (protects
           cheap by-portion products like cilantro from being given away)
-        - Any other unit price: discount capped at `unitPrice` via `min()`, so the net unit price never goes negative
-        - Persisted line amounts (each `setScale(2, HALF_UP)` after multiplying): `subtotal = unitPrice × qty`,
-          `discount = appliedUnitDiscount × qty` (accumulated per line), `total = (unitPrice − appliedUnitDiscount) × qty`
-        - Sale-level `discountAmount` is **derived** as Σ of corrected line discounts — the client-sent
-          `discountAmount` is ignored (service is the source of truth, same as `subtotal`/`total`/`unitPrice`);
-          `total = subtotal − discountAmount`
+        - Any other unit price: discount clamped to `[0, unitPrice]` via `max(ZERO).min(unitPrice)` — negative
+          requested discounts become `0`, and the net unit price never goes negative
+        - Persisted line amounts: `subtotal = unitPrice × qty` and `discount = appliedUnitDiscount × qty` (each
+          `setScale(2, HALF_UP)` after multiplying), then `total = subtotal − discount` **derived after rounding**
+          (not `netUnitPrice × qty`), so the line invariant holds to the cent on fractional quantities (kilos/portions)
+        - Sale-level `discountAmount` is **derived** as Σ of corrected line discounts and `total` as Σ of line
+          totals — the client-sent values are ignored (service is the source of truth, same as
+          `subtotal`/`unitPrice`); `total = subtotal − discountAmount` holds by construction
         - Applies only to `save`; `update()` re-inserts details without recomputing amounts (known gap)
 - **SaleDetail**: Line items for sales
     - ManyToOne relationships with Sale and Product

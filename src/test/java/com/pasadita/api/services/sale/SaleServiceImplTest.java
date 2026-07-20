@@ -145,6 +145,30 @@ class SaleServiceImplTest {
     }
 
     @Test
+    void fractionalQuantityKeepsLineAndSaleTotalsConsistent() {
+        SaleCreateDto dto = saveSaleWithSingleDetail("50.00", new BigDecimal("5.00"), "0.333");
+
+        SaleDetailCreateDto detail = dto.getSaleDetails().getFirst();
+        assertThat(detail.getSubtotal()).isEqualByComparingTo("16.65");
+        assertThat(detail.getDiscount()).isEqualByComparingTo("1.67");
+        assertThat(detail.getTotal()).isEqualByComparingTo("14.98");
+
+        assertThat(dto.getSubtotal()).isEqualByComparingTo("16.65");
+        assertThat(dto.getDiscountAmount()).isEqualByComparingTo("1.67");
+        assertThat(dto.getTotal()).isEqualByComparingTo("14.98");
+    }
+
+    @Test
+    void negativeRequestedDiscountIsClampedToZero() {
+        SaleCreateDto dto = saveSaleWithSingleDetail("50.00", new BigDecimal("-5.00"), "1.000");
+
+        SaleDetailCreateDto detail = dto.getSaleDetails().getFirst();
+        assertThat(detail.getDiscount()).isEqualByComparingTo("0.00");
+        assertThat(detail.getSubtotal()).isEqualByComparingTo("50.00");
+        assertThat(detail.getTotal()).isEqualByComparingTo("50.00");
+    }
+
+    @Test
     void nullRequestedDiscountIsTreatedAsZero() {
         SaleCreateDto dto = saveSaleWithSingleDetail("50.00", null, "1.500");
         SaleDetailCreateDto detail = dto.getSaleDetails().getFirst();
