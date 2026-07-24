@@ -619,4 +619,137 @@ class InvoiceServiceImplTest {
         assertThat(persistedInvoice.getStatus()).isEqualTo(InvoiceStatus.TIMBRADA);
         verify(invoiceRepository, never()).save(any());
     }
+
+    // Simulates the merge copy returned by save() outside a transaction: same basic columns,
+    // but the LAZY sale/customerFiscalData associations are gone (dead proxies in prod).
+    private static Invoice detachedCopyOf(Invoice source) {
+        return Invoice.builder()
+                .invoiceId(source.getInvoiceId())
+                .status(source.getStatus())
+                .uuid(source.getUuid())
+                .xmlUrl(source.getXmlUrl())
+                .pdfUrl(source.getPdfUrl())
+                .build();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void timbrarInvoice_saveReturnsDetachedCopy_mapsWithReattachedAssociations() throws Exception {
+        when(saleRepository.findWithDetailsById(sale.getId())).thenReturn(Optional.of(sale));
+        when(fiscalDataRepository.findById(fiscalData.getFiscalId())).thenReturn(Optional.of(fiscalData));
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.empty());
+        when(invoiceMapper.toEntity(eq(dto), eq(sale), eq(fiscalData))).thenReturn(persistedInvoice);
+        when(invoiceRepository.save(any(Invoice.class)))
+                .thenAnswer(inv -> detachedCopyOf(inv.getArgument(0)));
+        when(invoiceMapper.toResponseDto(any(Invoice.class)))
+                .thenReturn(InvoiceResponseDto.builder().status("TIMBRADA").build());
+
+        when(facturapi.customers()).thenReturn(customersResource);
+        when(facturapi.products()).thenReturn(productsResource);
+
+        io.facturapi.models.Customer remoteCustomer = new io.facturapi.models.Customer();
+        remoteCustomer.setId("cus_1");
+        when(customersResource.create(anyMap(), any())).thenReturn(remoteCustomer);
+
+        io.facturapi.models.Product remoteProduct = new io.facturapi.models.Product();
+        remoteProduct.setId("prod_1");
+        when(productsResource.create(anyMap())).thenReturn(remoteProduct);
+
+        HttpResponse<String> stampedResponse = (HttpResponse<String>) mock(HttpResponse.class);
+        when(stampedResponse.statusCode()).thenReturn(200);
+        when(stampedResponse.body()).thenReturn(
+                "{\"id\":\"inv_abc\",\"uuid\":\"11111111-2222-3333-4444-555555555555\"}");
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(stampedResponse);
+
+        var response = service.timbrarInvoice(dto);
+
+        assertThat(response).isPresent();
+        ArgumentCaptor<Invoice> mappedCaptor = ArgumentCaptor.forClass(Invoice.class);
+        verify(invoiceMapper).toResponseDto(mappedCaptor.capture());
+        assertThat(mappedCaptor.getValue().getSale()).isSameAs(sale);
+        assertThat(mappedCaptor.getValue().getCustomerFiscalData()).isSameAs(fiscalData);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void timbrarInvoice_persistFailsAfterStamping_doesNotMarkError() throws Exception {
+        when(saleRepository.findWithDetailsById(sale.getId())).thenReturn(Optional.of(sale));
+        when(fiscalDataRepository.findById(fiscalData.getFiscalId())).thenReturn(Optional.of(fiscalData));
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.empty());
+        when(invoiceMapper.toEntity(eq(dto), eq(sale), eq(fiscalData))).thenReturn(persistedInvoice);
+        when(invoiceRepository.save(any(Invoice.class)))
+                .thenAnswer(inv -> inv.getArgument(0))
+                .thenThrow(new RuntimeException("DB down"));
+
+        when(facturapi.customers()).thenReturn(customersResource);
+        when(facturapi.products()).thenReturn(productsResource);
+
+        io.facturapi.models.Customer remoteCustomer = new io.facturapi.models.Customer();
+        remoteCustomer.setId("cus_1");
+        when(customersResource.create(anyMap(), any())).thenReturn(remoteCustomer);
+
+        io.facturapi.models.Product remoteProduct = new io.facturapi.models.Product();
+        remoteProduct.setId("prod_1");
+        when(productsResource.create(anyMap())).thenReturn(remoteProduct);
+
+        HttpResponse<String> stampedResponse = (HttpResponse<String>) mock(HttpResponse.class);
+        when(stampedResponse.statusCode()).thenReturn(200);
+        when(stampedResponse.body()).thenReturn(
+                "{\"id\":\"inv_abc\",\"uuid\":\"11111111-2222-3333-4444-555555555555\"}");
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(stampedResponse);
+
+        assertThatThrownBy(() -> service.timbrarInvoice(dto))
+                .isInstanceOf(RuntimeException.class)
+                .isNotInstanceOf(BusinessRuleException.class)
+                .hasMessage("DB down");
+
+        verify(invoiceErrorPersister, never()).markAsError(any());
+        verify(invoiceMapper, never()).toResponseDto(any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void cancelInvoice_saveReturnsDetachedCopy_mapsWithReattachedAssociations() throws Exception {
+        persistedInvoice.setStatus(InvoiceStatus.TIMBRADA);
+        persistedInvoice.setXmlUrl("https://www.facturapi.io/v2/invoices/inv_abc/xml");
+        when(invoiceRepository.findWithDetailsByInvoiceId(900L)).thenReturn(Optional.of(persistedInvoice));
+        when(invoiceRepository.save(any(Invoice.class)))
+                .thenAnswer(inv -> detachedCopyOf(inv.getArgument(0)));
+        when(invoiceMapper.toResponseDto(any(Invoice.class)))
+                .thenReturn(InvoiceResponseDto.builder().status("CANCELADA").build());
+
+        HttpResponse<String> okResponse = (HttpResponse<String>) mock(HttpResponse.class);
+        when(okResponse.statusCode()).thenReturn(200);
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(okResponse);
+
+        service.cancelInvoice(900L, null);
+
+        ArgumentCaptor<Invoice> mappedCaptor = ArgumentCaptor.forClass(Invoice.class);
+        verify(invoiceMapper).toResponseDto(mappedCaptor.capture());
+        assertThat(mappedCaptor.getValue().getSale()).isSameAs(sale);
+        assertThat(mappedCaptor.getValue().getCustomerFiscalData()).isSameAs(fiscalData);
+    }
+
+    @Test
+    void createInvoiceRequest_saveReturnsDetachedCopy_mapsWithReattachedAssociations() {
+        persistedInvoice.setStatus(InvoiceStatus.ERROR);
+        when(saleRepository.findById(sale.getId())).thenReturn(Optional.of(sale));
+        when(fiscalDataRepository.findById(fiscalData.getFiscalId())).thenReturn(Optional.of(fiscalData));
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.of(persistedInvoice));
+        when(invoiceRepository.save(any(Invoice.class)))
+                .thenAnswer(inv -> detachedCopyOf(inv.getArgument(0)));
+        when(invoiceMapper.toResponseDto(any(Invoice.class)))
+                .thenReturn(InvoiceResponseDto.builder().status("PENDIENTE").build());
+
+        var response = service.createInvoiceRequest(dto);
+
+        assertThat(response).isPresent();
+        ArgumentCaptor<Invoice> mappedCaptor = ArgumentCaptor.forClass(Invoice.class);
+        verify(invoiceMapper).toResponseDto(mappedCaptor.capture());
+        assertThat(mappedCaptor.getValue().getSale()).isSameAs(sale);
+        assertThat(mappedCaptor.getValue().getCustomerFiscalData()).isSameAs(fiscalData);
+    }
 }

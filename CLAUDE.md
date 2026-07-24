@@ -341,10 +341,19 @@ Current domains include:
       `TIMBRADA`/`ERROR` result (short tx). Safe because `SaleRepository.findWithDetailsById` eager-fetches via
       `@EntityGraph` everything the stamping path touches (no lazy loads outside a tx). `createInvoiceRequest` and
       the read-only lookups keep `@Transactional` (pure DB). Error status is persisted via the inner
-      `InvoiceErrorPersister` (`REQUIRES_NEW`)
+      `InvoiceErrorPersister` (`REQUIRES_NEW`). One subtlety: outside a surrounding tx,
+      `repository.save(entityWithId)` runs `em.merge()` in its own short tx and returns a **copy** whose LAZY
+      `sale`/`customerFiscalData` (no cascade) are uninitialized proxies that die when that tx commits
+      (prod-only — `spring.jpa.open-in-view=false` is set only in `application-prod.properties`; dev OSIV masks
+      it). The service therefore re-attaches the already-loaded `sale`/`customerFiscalData` onto every post-save
+      copy before DTO mapping via `reattachAssociations` — in `findOrCreatePendingInvoice`, after the TIMBRADA
+      save in `timbrarInvoice`, and in `cancelInvoice`
     - **Error transparency**: in `timbrarInvoice`, `BusinessRuleException` (e.g. Facturapi HTTP 4xx body) is caught,
       the invoice is marked `ERROR`, and the exception is **rethrown as-is** so the client sees the exact rejection
-      reason; only truly unexpected `RuntimeException`s get wrapped as "Error inesperado al timbrar CFDI"
+      reason; only truly unexpected `RuntimeException`s get wrapped as "Error inesperado al timbrar CFDI".
+      `markAsError` guards **only** the remote stamping phase — once the CFDI is stamped at SAT the row is never
+      flipped to `ERROR`: a failure persisting `TIMBRADA` is logged with the stamped UUID and rethrown raw (row
+      stays `PENDIENTE`, retriable via row reuse)
     - **RESICO ISR retention**: `buildProductPayload(detail, applyIsrRetention)` conditionally appends a 1.25% ISR
       retention to the product `taxes` array as `{type:ISR, rate:0.0125, factor:Tasa, withholding:true}` (Facturapi's
       convention — `withholding:true` lands it in CFDI `Retenciones`; a separate `retentions` key would be ignored).

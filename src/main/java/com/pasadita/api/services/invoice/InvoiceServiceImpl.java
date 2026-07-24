@@ -107,8 +107,12 @@ public class InvoiceServiceImpl implements InvoiceService {
     /**
      * Deliberately NOT @Transactional: the Facturapi SDK/HTTP calls can take up to 20 s and must
      * not hold a MySQL connection. Flow is three phases — persist PENDIENTE (short repository tx),
-     * remote stamping outside any tx, then persist the TIMBRADA/ERROR outcome (short tx). The
-     * Sale is fully fetched via @EntityGraph, so no lazy loading happens outside a transaction.
+     * remote stamping outside any tx, then persist the TIMBRADA outcome (short tx). The Sale is
+     * fully fetched via @EntityGraph, and every out-of-tx save returns a merge copy whose LAZY
+     * associations are re-attached before DTO mapping, so no lazy loading happens outside a
+     * transaction. markAsError guards only the remote stamping phase: once the CFDI is stamped at
+     * SAT the row is never flipped to ERROR — a TIMBRADA-persist failure is logged with the
+     * stamped UUID and rethrown as-is (row stays PENDIENTE, retriable via row reuse).
      */
     @Override
     public Optional<InvoiceResponseDto> timbrarInvoice(InvoiceCreateDto dto) {
@@ -124,11 +128,9 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         Invoice invoice = findOrCreatePendingInvoice(dto, sale, fiscalData);
 
+        JsonNode stamped;
         try {
-            JsonNode stamped = stampThroughFacturapi(sale, fiscalData);
-            applyStampedResult(invoice, stamped);
-            Invoice persisted = invoiceRepository.save(invoice);
-            return Optional.of(invoiceMapper.toResponseDto(persisted));
+            stamped = stampThroughFacturapi(sale, fiscalData);
         } catch (FacturapiException ex) {
             log.error("Facturapi rejected stamping for sale {} (status={}, code={}, path={}): {}",
                     sale.getId(), ex.getStatusCode(), ex.getErrorCode(), ex.getErrorPath(), ex.getMessage());
@@ -143,6 +145,17 @@ public class InvoiceServiceImpl implements InvoiceService {
             invoiceErrorPersister.markAsError(invoice.getInvoiceId());
             throw new BusinessRuleException("Error inesperado al timbrar CFDI: " + ex.getMessage());
         }
+
+        applyStampedResult(invoice, stamped);
+        Invoice persisted;
+        try {
+            persisted = invoiceRepository.save(invoice);
+        } catch (RuntimeException ex) {
+            log.error("CFDI already stamped at SAT (uuid={}) but persisting TIMBRADA failed for invoice {}; "
+                    + "NOT marking ERROR", invoice.getUuid(), invoice.getInvoiceId(), ex);
+            throw ex;
+        }
+        return Optional.of(invoiceMapper.toResponseDto(reattachAssociations(persisted, sale, fiscalData)));
     }
 
     @Override
@@ -160,7 +173,8 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     // Not @Transactional: the Facturapi cancel call must run without holding a DB connection;
-    // the final save is its own short repository transaction.
+    // the final save is its own short repository transaction, so its merge copy needs the loaded
+    // associations re-attached before mapping.
     @Override
     public InvoiceResponseDto cancelInvoice(Long invoiceId, String motive) {
         Invoice invoice = invoiceRepository.findWithDetailsByInvoiceId(invoiceId)
@@ -171,6 +185,8 @@ public class InvoiceServiceImpl implements InvoiceService {
                     "Only TIMBRADA invoices can be cancelled (current status=" + invoice.getStatus() + ")");
         }
 
+        Sale sale = invoice.getSale();
+        CustomerFiscalData fiscalData = invoice.getCustomerFiscalData();
         String facturapiId = extractFacturapiId(invoice);
         String resolvedMotive = StringUtils.hasText(motive) ? motive : DEFAULT_CANCEL_MOTIVE;
 
@@ -178,7 +194,7 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         invoice.setStatus(InvoiceStatus.CANCELADA);
         Invoice persisted = invoiceRepository.save(invoice);
-        return invoiceMapper.toResponseDto(persisted);
+        return invoiceMapper.toResponseDto(reattachAssociations(persisted, sale, fiscalData));
     }
 
     // Not @Transactional: only one repository read, then a remote HTTP call that must not hold
@@ -309,10 +325,22 @@ public class InvoiceServiceImpl implements InvoiceService {
             }
             current.setCustomerFiscalData(fiscalData);
             current.setStatus(InvoiceStatus.PENDIENTE);
-            return invoiceRepository.save(current);
+            return reattachAssociations(invoiceRepository.save(current), sale, fiscalData);
         }
         Invoice fresh = invoiceMapper.toEntity(dto, sale, fiscalData);
-        return invoiceRepository.save(fresh);
+        return reattachAssociations(invoiceRepository.save(fresh), sale, fiscalData);
+    }
+
+    /**
+     * Outside a surrounding transaction, {@code save(entityWithId)} runs {@code em.merge()} in the
+     * repository's own short transaction and returns a new copy whose LAZY {@code sale} /
+     * {@code customerFiscalData} (no cascade) are uninitialized proxies that die when that
+     * transaction commits. Re-attach the already-loaded objects so DTO mapping never lazy-loads.
+     */
+    private Invoice reattachAssociations(Invoice saved, Sale sale, CustomerFiscalData fiscalData) {
+        saved.setSale(sale);
+        saved.setCustomerFiscalData(fiscalData);
+        return saved;
     }
 
     private JsonNode stampThroughFacturapi(Sale sale, CustomerFiscalData fiscalData) {
