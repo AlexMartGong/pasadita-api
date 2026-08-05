@@ -26,7 +26,7 @@ services:
       - "3307:3306"
     environment:
       MYSQL_DATABASE: la_pasadita_database
-      MYSQL_ROOT_PASSWORD: Root1234
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
     volumes:
       - mysql_local_data:/var/lib/mysql
       - ./src/main/resources/scriptLP.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
@@ -50,9 +50,9 @@ services:
     environment:
       # allowPublicKeyRetrieval is required for MySQL 8 caching_sha2_password
       # auth over a non-SSL local connection
-      DB_URL: jdbc:mysql://local-db:3306/la_pasadita_database?serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
-      DB_USERNAME: root
-      DB_PASSWORD: Root1234
+      DB_URL: ${DB_URL}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
       # Local frontend origin — prod default (https://lapasadita.app) stays
       # when this var is absent
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
