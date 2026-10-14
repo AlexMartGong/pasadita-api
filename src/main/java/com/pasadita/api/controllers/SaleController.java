@@ -65,7 +65,9 @@ public class SaleController {
     private void sendOpenDrawerAsync(String stationId) {
         CompletableFuture.runAsync(() -> {
             try {
-                printerWebSocketHandler.sendOpenDrawerCommand(stationId);
+                if (!printerWebSocketHandler.sendOpenDrawerCommand(stationId)) {
+                    log.warn("OPEN_DRAWER no entregado a la estación {}", stationId);
+                }
             } catch (Exception e) {
                 log.error("Error when sending open-drawer command: {}", e.getMessage(), e);
             }
@@ -79,9 +81,11 @@ public class SaleController {
                 if (ticketOpt.isPresent()) {
                     TicketResponseDto ticket = ticketOpt.get();
                     if (stationId != null && !stationId.isBlank()) {
-                        printerWebSocketHandler.sendPrintCommand(stationId, ticket);
-                    } else {
-                        printerWebSocketHandler.sendPrintCommandToAll(ticket);
+                        if (!printerWebSocketHandler.sendPrintCommand(stationId, ticket)) {
+                            log.warn("Ticket de la venta {} no entregado a la estación {}", saleId, stationId);
+                        }
+                    } else if (printerWebSocketHandler.sendPrintCommandToAll(ticket) == 0) {
+                        log.warn("Ticket de la venta {} no entregado: no hay estaciones conectadas", saleId);
                     }
                 }
             } catch (Exception e) {
@@ -141,7 +145,13 @@ public class SaleController {
                     .body(Map.of("error", "stationId es requerido"));
         }
 
-        sendOpenDrawerAsync(stationId);
+        if (!printerWebSocketHandler.sendOpenDrawerCommand(stationId)) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+                    "success", false,
+                    "error", "La estación " + stationId + " no está conectada. Verifica que el agente de "
+                            + "impresión esté abierto en la PC de caja e inténtalo de nuevo."
+            ));
+        }
 
         return ResponseEntity.ok(Map.of(
                 "success", true,
