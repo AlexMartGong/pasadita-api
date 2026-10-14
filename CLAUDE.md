@@ -138,7 +138,7 @@ The application follows a standard layered architecture:
 
 ```
 com.pasadita.api/
-├── config/           # WebSocket, CORS, and @ConfigurationProperties (e.g., FacturacionProperties, R2Properties); S3Config exposes the S3Client bean
+├── config/           # WebSocket, CORS, scheduling (SchedulingConfig: @EnableScheduling + Clock), and @ConfigurationProperties (e.g., FacturacionProperties, R2Properties); S3Config exposes the S3Client bean
 ├── controllers/      # REST endpoints by domain
 ├── dto/              # DTOs organized by domain (customer, employee, product, sale, saledetail, deliveryorder, dashboard, ticket, fiscal, invoice)
 ├── entities/         # JPA entities
@@ -254,7 +254,12 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
 - Pure Mockito unit tests (no Spring context) for service rules: `InvoiceServiceImplTest` (stamping happy path,
   RESICO ISR retention, SAT catalog validation, `PENDIENTE`/`ERROR` row reuse vs. finalized rejection, Facturapi
   rejection message transparency + `markAsError`, cancel/email flows), `SaleServiceImplTest`
-  (discount rule: range bounds, cap, per-quantity accumulation, derived sale totals)
+  (discount rule: range bounds, cap, per-quantity accumulation, derived sale totals), `PrinterWebSocketHandlerTest`
+  (late close of a replaced session keeps the new one, closing the current session removes it, replacement closes the
+  previous session, closed-session sends fail and clean up, heartbeat ping/eviction with a mocked `Clock`),
+  `SaleControllerTest` (open-drawer `503` when the station is offline, `400` without `stationId`, `200` when delivered)
+- `PasaditaApiApplicationTests.contextLoads` needs the MySQL from `application.properties` (localhost:3306); the
+  Mockito suites run without it
 - Spring Security Test support available
 - REST Docs integration for API documentation
 - Surefire runs with `-XX:+EnableDynamicAgentLoading` (silences the JDK 21 dynamic-agent warning for Mockito/Byte
@@ -291,7 +296,7 @@ Current domains include:
     - **Cash-drawer fallback**: the drawer opens via an electric pulse the thermal printer emits over RJ11 when it
       receives ESC/POS data, so skipping the ticket would leave it shut on cash sales. When `printTicket` is `false`
       **and** `paymentMethodId == 1L` (cash), `saveSale` instead dispatches a lightweight `OPEN_DRAWER` WebSocket
-      command (no ticket) via `sendOpenDrawerAsync`
+      command (no ticket) via `sendOpenDrawerAsync` (see WebSocket Integration)
     - **Discount rule ("Regla de Alex")** — enforced in `SaleServiceImpl.save` via
       `resolveApplicableUnitDiscount(unitPrice, requestedUnitDiscount)`:
         - `SaleDetailCreateDto.discount` is interpreted as a **per-unit** discount (not a line amount)
@@ -393,25 +398,56 @@ Product images are stored in Cloudflare R2 (S3-compatible) via AWS SDK v2:
 The application includes WebSocket support for real-time printer connections:
 
 - **Endpoint**: `/ws/printer?stationId={stationId}`
-- **Handler**: `PrinterWebSocketHandler` manages station connections. Uses Lombok `@Slf4j` + `@RequiredArgsConstructor`;
-  all logging is SLF4J (no `System.out`)
+- **Handler**: `PrinterWebSocketHandler` manages station connections. Uses Lombok `@Slf4j` + `@RequiredArgsConstructor`
+  (deps: `ObjectMapper`, `Clock`); all logging is SLF4J (no `System.out`)
 - **Thread safety**: `afterConnectionEstablished` stores each session wrapped in Spring's
   `ConcurrentWebSocketSessionDecorator` (sendTimeLimit 10 s, bufferSizeLimit 1 MB) — sends are dispatched from async
-  threads (`CompletableFuture.runAsync` in `SaleController`) and raw WebSocket sessions are not thread-safe (concurrent
-  `sendMessage` threw `IllegalStateException: The remote endpoint was in state [TEXT_FULL_WRITING]` and silently dropped
-  the ticket/drawer command). On buffer overflow or send timeout the decorator throws `SessionLimitExceededException`
-  and closes the session with `SESSION_NOT_RELIABLE`; close/error callbacks receive the raw session, but map cleanup is
-  keyed by `stationId` (from the query string), so removal still works
+  threads (`CompletableFuture.runAsync` in `SaleController`) and from the heartbeat scheduler, and raw WebSocket
+  sessions are not thread-safe (concurrent `sendMessage` threw `IllegalStateException: The remote endpoint was in state
+  [TEXT_FULL_WRITING]` and silently dropped the ticket/drawer command). On buffer overflow or send timeout the decorator
+  throws `SessionLimitExceededException` and closes the session with `SESSION_NOT_RELIABLE`
+- **Session identity rule** (fixes the "ticket and drawer both dead until the cashier PC reboots" incident): the
+  `stations` map is keyed by `stationId`, but an entry is only ever removed **if it still points to the session being
+  closed** — `removeIfCurrent(stationId, sessionId)`, an atomic `computeIfPresent` comparing ids. Comparing ids works
+  even though the map holds the decorator: `ConcurrentWebSocketSessionDecorator.getId()` delegates to the raw session
+  that Spring passes to `afterConnectionClosed`/`handleTransportError`. Before this rule, a replaced session whose
+  close arrived late (agent reconnects as B, proxy detects A's death afterwards) ran `remove(stationId)` and dropped B:
+  the agent stayed connected but the backend could no longer find it. Every removal path (close, transport error,
+  failed send, heartbeat eviction) goes through this rule — never call `stations.remove(stationId)` directly
+- **Reconnection**: a new connection for a `stationId` that already has a session replaces it (`put` first), then the
+  previous session is closed (`NORMAL`, "Reemplazada por una nueva conexión") and a `warn` is logged. Repeated
+  replacement warnings for one station usually mean two agents share the same `stationId`
+- **Send results**: `sendPrintCommand` / `sendOpenDrawerCommand` return `boolean` and `sendPrintCommandToAll` returns
+  the number of stations reached. "Delivered" = written to an open session (the agent's `PRINT_RESULT` is the real
+  ack). A session found closed, or whose `sendMessage` throws, is evicted under the identity rule and the send returns
+  `false`. Message formats consumed by the agent are unchanged (ticket JSON = serialized `TicketResponseDto`;
+  `{"type":"OPEN_DRAWER","timestamp":<utc>}`)
+- **Heartbeat**: `@Scheduled(fixedRate = 25 s) sendHeartbeats()` pings every station (`PingMessage`). The last sign of
+  life per session id (pong, or any inbound text) is stored in `lastSeenBySessionId`; sessions silent for more than
+  **75 s** are evicted on the next heartbeat run, i.e. within 75–100 s (closed with `SESSION_NOT_RELIABLE` = 4500,
+  `warn` logged). Scheduling is enabled by
+  `config/SchedulingConfig` (`@EnableScheduling` + the `Clock` bean), kept separate from `WebSocketConfig` to avoid a
+  circular dependency (`WebSocketConfig` injects the handler, the handler needs the `Clock`). The ping traffic also
+  keeps reverse proxies (e.g. nginx `proxy_read_timeout`, 60 s by default) from closing idle connections. The agent's
+  WebSocket client must answer pings (RFC 6455; standard libraries do it automatically) — a healthy station evicted
+  every ~75 s means it does not
+- **Logs**: `info` on connect (stationId, session id, remote address) and close (stationId, session id, `CloseStatus`,
+  current vs. already-replaced session); `warn` on replacement, heartbeat eviction and sends to offline/closed
+  stations; `error` on transport errors and send failures. Inbound `{"type":"PRINT_RESULT",...}` messages from the
+  agent are logged with stationId/session id (`warn` when `success` is `false`)
 - **Usage**: When a sale is created, tickets are sent asynchronously to connected printer stations. The async
   dispatch lives in `SaleController.saveSale` (not the service), gated on `SaleCreateDto.printTicket` (skip when
-  `false`, print when `true`/`null`)
+  `false`, print when `true`/`null`). `GET /api/sales/{saleId}/ticket?stationId=` also re-sends the ticket
+  asynchronously; an undelivered ticket never fails the request, it only logs a `warn` with saleId/stationId
 - Supports sending to specific station (`stationId`) or broadcasting to all connected stations
-- **Drawer command** (decoupled from printing): `PrinterWebSocketHandler.sendOpenDrawerCommand(stationId)` sends a
-  lightweight `{"type":"OPEN_DRAWER","timestamp":<utc>}` `TextMessage` to one station (uses SLF4J: `info` on send,
-  `warn` if the station is offline, `error` on I/O failure). Triggered two ways:
-    - Automatically in `saveSale` when `printTicket == false` and the sale is cash (`paymentMethodId == 1L`)
-    - Manually via `POST /api/sales/open-drawer?stationId=` (`ROLE_ADMIN`/`ROLE_CAJERO`) — `200` + success map when
-      `stationId` is present, `400` + error map when missing/blank. Both paths go through `sendOpenDrawerAsync`
+- **Drawer command** (decoupled from printing): `PrinterWebSocketHandler.sendOpenDrawerCommand(stationId)` sends the
+  lightweight `OPEN_DRAWER` `TextMessage` to one station. Triggered two ways:
+    - Automatically in `saveSale` when `printTicket == false` and the sale is cash (`paymentMethodId == 1L`), via the
+      fire-and-forget `sendOpenDrawerAsync` (`warn` if not delivered)
+    - Manually via `POST /api/sales/open-drawer?stationId=` (`ROLE_ADMIN`/`ROLE_CAJERO`), **synchronously** so the
+      result reaches the client: `200` + success map when delivered, `503` + `{"success":false,"error":...}` (Spanish
+      message asking to check the print agent on the cashier PC) when the station is not connected, `400` + error map
+      when `stationId` is missing/blank
 
 ### Entity Relationship Patterns
 
