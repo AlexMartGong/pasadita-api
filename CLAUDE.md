@@ -231,6 +231,7 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
 | `EntityNotFoundException`   | 404 NOT_FOUND      | Entity lookup fails (throw from service)                                       |
 | `BusinessRuleException`     | 400 BAD_REQUEST    | Domain rule violation (e.g., cancel already-delivered order)                   |
 | `EmployeeInactiveException` | 401 (auth failure) | Extends `AuthenticationException`; thrown during login if employee is inactive |
+| `ConstraintViolationException` (`jakarta.validation`) | 400 BAD_REQUEST | Entity Bean Validation re-run by Hibernate at persist time; body is `{property: message}` like `ValidationUtils` |
 | `Exception` (catch-all)     | 500                | Logged via SLF4J, returns generic message                                      |
 
 - Always throw `EntityNotFoundException` or `BusinessRuleException` from services — never return null or handle HTTP
@@ -258,6 +259,8 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
   (late close of a replaced session keeps the new one, closing the current session removes it, replacement closes the
   previous session, closed-session sends fail and clean up, heartbeat ping/eviction with a mocked `Clock`),
   `SaleControllerTest` (open-drawer `503` when the station is offline, `400` without `stationId`, `200` when delivered)
+- Pure Bean Validation tests (no Spring context): `SaleDetailValidationTest` (entity `quantity` bounds as Hibernate
+  checks them at persist time) and `GlobalExceptionHandlerTest` (`ConstraintViolationException` → `400`)
 - `PasaditaApiApplicationTests.contextLoads` needs the MySQL from `application.properties` (localhost:3306); the
   Mockito suites run without it
 - Spring Security Test support available
@@ -314,6 +317,10 @@ Current domains include:
 - **SaleDetail**: Line items for sales
     - ManyToOne relationships with Sale and Product
     - Tracks quantity, unit price, subtotal, discount, and total (all server-computed under the discount rule above)
+    - `quantity` is `decimal(10,3)`: any positive value with up to 3 decimals (min `0.001`, e.g. `0.006` kg = 6 g).
+      The entity's constraints are what actually guard sale creation — `SaleCreateDto.saleDetails` is not `@Valid`, so
+      DTO constraints on `SaleDetailCreateDto` are not checked there; Hibernate re-validates the entity at persist time
+      (a too-strict entity constraint once turned valid gram sales into 500s)
 - **PaymentMethod**: Payment method catalog (cash, card, etc.)
     - `claveFormaPagoSat` (varchar 2) — SAT forma de pago code (e.g. `01` cash, `04` card). No CRUD layer; managed via
       SQL/seed
