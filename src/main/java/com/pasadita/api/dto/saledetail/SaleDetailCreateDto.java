@@ -21,7 +21,7 @@ public class SaleDetailCreateDto {
     private Long productId;
 
     @NotNull(message = "Quantity is required")
-    @DecimalMin(value = "0.01", message = "Quantity must be positive")
+    @DecimalMin(value = "0", inclusive = false, message = "Quantity must be positive")
     @Digits(integer = 10, fraction = 3, message = "Quantity must have up to 10 digits and 3 decimal places")
     private BigDecimal quantity;
 
