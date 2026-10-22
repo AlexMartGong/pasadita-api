@@ -88,7 +88,8 @@ docker compose -f docker-compose.local.yml down -v
 
 ### Technology Stack
 
-- **Framework**: Spring Boot 3.5.15 with Java 21
+- **Framework**: Spring Boot 4.1.2 with Java 21 (Spring Framework 7, Spring Security 7, Hibernate ORM 7, Jackson 3,
+  Tomcat 11, Jakarta EE 11) — see Spring Boot 4 / Jackson 3 Rules
 - **Database**: MySQL with JPA/Hibernate
 - **Security**: JWT-based authentication with Spring Security
 - **Real-time**: WebSocket for printer connections
@@ -118,6 +119,12 @@ The application follows a standard layered architecture:
   dev falls back to permissive patterns (`localhost`, `127.0.0.1`, `192.168.*`, `10.*`)
 - Stateless session management
 - Roles: `ROLE_ADMIN`, `ROLE_CAJERO` (cashier), `ROLE_PEDIDOS` (orders)
+- **Login filter** (`JwtAuthenticationFilter`): reads the body with the Spring Boot-configured `JsonMapper` (passed in
+  by `SpringSecurityConfig.filterChain`), never a raw `new JsonMapper()`/`JsonMapper.shared()` — raw Jackson 3 binds
+  `Employee` through its Lombok all-args constructor and rejects the absent primitive `active`, failing every login.
+  Spring Security 7 adds a `FactorGrantedAuthority` (`FACTOR_PASSWORD`, carries an `Instant`) to every
+  authentication; the filter drops it so the JWT `authorities` claim and the login body keep only the role
+  (`[{"authority":"ROLE_ADMIN"}]`) — jjwt's Jackson 2 serializer can't write the `Instant` anyway
 
 ### Data Model Patterns
 
@@ -154,6 +161,25 @@ com.pasadita.api/
 `PasaditaApiApplication` declares `@ConfigurationPropertiesScan("com.pasadita.api.config")` — any new
 `@ConfigurationProperties` class must live under that package to be picked up.
 
+### Spring Boot 4 / Jackson 3 Rules
+
+- **Jackson 3** (`tools.jackson.*`) is the app's JSON library; annotations stay `com.fasterxml.jackson.annotation`.
+  Inject Boot's auto-configured `JsonMapper` — a raw `new JsonMapper()` uses different defaults
+- **`spring.jackson.use-jackson2-defaults=true` (base `application.properties`) is required**: with pure Jackson 3
+  defaults the Lombok DTOs/entities bind through their all-args constructor and absent primitives fail, so login
+  breaks, bodies without `active` get `400`, and field defaults (`active = true`, `discountAmount = 0`) are lost.
+  It also keeps the Boot 3.x JSON shape the frontend and print agent consume
+- Jackson 3 exceptions are unchecked (`JacksonException` is no longer an `IOException`): catch it explicitly wherever
+  a (de)serialization failure must keep its old mapping (Facturapi calls → `BusinessRuleException`, JWT filters → `401`)
+- `JsonNode.asText()` is deprecated → `asString()`
+- Jackson 2 (`com.fasterxml.jackson.core`, version from Boot's `jackson-2-bom`) remains on the classpath only as a
+  transitive of `jjwt-jackson` and `facturapi-java`; don't use it in app code
+- Starters: `spring-boot-starter-webmvc` (not `-web`), test security support via `spring-boot-starter-security-test`
+- Nullability annotations come from JSpecify (`org.jspecify.annotations`), not `org.springframework.lang`
+- Actuator health exposes the `liveness`/`readiness` groups by default (status payload still `UP`/`DOWN`)
+- When bumping Boot, run the app once with `spring-boot-properties-migrator` (runtime scope, never committed) to
+  catch renamed keys, and verify `ddl-auto=validate` against `scriptLP.sql`
+
 ### Database Configuration
 
 - Requires MySQL database named `la_pasadita_database`
@@ -163,7 +189,8 @@ com.pasadita.api/
 - **Production** (`application-prod.properties`): Uses environment variables (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
   `JWT_SECRET`, `JWT_EXPIRATION`, `CORS_ALLOWED_ORIGINS`, `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`,
   `FACTURAPI_KEY`, `R2_ACCESS_KEY`,
-  `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`), Hibernate `ddl-auto=validate`, HikariCP pool (max 10)
+  `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`), Hibernate `ddl-auto=validate`, HikariCP pool (max 10),
+  error-detail hardening via `spring.web.error.include-*=never` (Boot 4 key; the old `server.error.*` is ignored)
 - **Facturación (CFDI)**: `facturacion.emisor.*` (rfc, razon-social, regimen-fiscal, codigo-postal) and
   `facturacion.csd.*` (cer-path, key-path, password) are bound to `FacturacionProperties` (under `config/`).
   `facturapi.key` (env `FACTURAPI_KEY`) is the Facturapi secret bearer token; `FacturapiConfig` exposes both the
@@ -258,7 +285,10 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
   (discount rule: range bounds, cap, per-quantity accumulation, derived sale totals), `PrinterWebSocketHandlerTest`
   (late close of a replaced session keeps the new one, closing the current session removes it, replacement closes the
   previous session, closed-session sends fail and clean up, heartbeat ping/eviction with a mocked `Clock`),
-  `SaleControllerTest` (open-drawer `503` when the station is offline, `400` without `stationId`, `200` when delivered)
+  `SaleControllerTest` (open-drawer `503` when the station is offline, `400` without `stationId`, `200` when delivered),
+  `JwtAuthenticationFilterTest` (login body binding with Boot's `JsonMapper` built from the real
+  `application.properties` via `ApplicationContextRunner` — fails if `use-jackson2-defaults` is dropped; malformed
+  body stays a `401`; `FactorGrantedAuthority` never reaches the JWT or the login body)
 - Pure Bean Validation tests (no Spring context): `SaleDetailValidationTest` (entity `quantity` bounds as Hibernate
   checks them at persist time) and `GlobalExceptionHandlerTest` (`ConstraintViolationException` → `400`)
 - `PasaditaApiApplicationTests.contextLoads` needs the MySQL from `application.properties` (localhost:3306); the
@@ -392,7 +422,9 @@ Current domains include:
 Product images are stored in Cloudflare R2 (S3-compatible) via AWS SDK v2:
 
 - **Config**: `R2Properties` (`@ConfigurationProperties(prefix = "cloudflare.r2")`, record under `config/`) +
-  `S3Config` (`S3Client` bean). Version managed by the AWS SDK BOM (`software.amazon.awssdk:bom`) in `pom.xml`
+  `S3Config` (`S3Client` bean). Version managed by the AWS SDK BOM (`software.amazon.awssdk:bom`) in `pom.xml`.
+  The sync client runs on the SDK's default `apache5-client`; `netty-nio-client` (async-only) is excluded from the
+  `s3` dependency so Netty never reaches the runtime classpath — re-add it only if an `S3AsyncClient` is introduced
 - **Service** (`services/storage/`): `StorageService.uploadFile(MultipartFile file, String folder)` →
   `S3StorageServiceImpl` generates a UUID key (`folder/<uuid>.<ext>`, extension preserved), uploads via `putObject`,
   and returns `publicUrl + "/" + key`. I/O / SDK failures are wrapped in `BusinessRuleException` (400)
@@ -406,7 +438,7 @@ The application includes WebSocket support for real-time printer connections:
 
 - **Endpoint**: `/ws/printer?stationId={stationId}`
 - **Handler**: `PrinterWebSocketHandler` manages station connections. Uses Lombok `@Slf4j` + `@RequiredArgsConstructor`
-  (deps: `ObjectMapper`, `Clock`); all logging is SLF4J (no `System.out`)
+  (deps: Boot's `JsonMapper`, `Clock`); all logging is SLF4J (no `System.out`)
 - **Thread safety**: `afterConnectionEstablished` stores each session wrapped in Spring's
   `ConcurrentWebSocketSessionDecorator` (sendTimeLimit 10 s, bufferSizeLimit 1 MB) — sends are dispatched from async
   threads (`CompletableFuture.runAsync` in `SaleController`) and from the heartbeat scheduler, and raw WebSocket

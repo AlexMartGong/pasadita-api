@@ -1,6 +1,5 @@
 package com.pasadita.api.services.invoice;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pasadita.api.config.FacturacionProperties;
 import com.pasadita.api.dto.invoice.InvoiceCreateDto;
 import com.pasadita.api.dto.invoice.InvoiceMapper;
@@ -32,6 +31,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
 import java.net.http.HttpClient;
@@ -65,7 +65,7 @@ class InvoiceServiceImplTest {
     @Mock private InvoiceServiceImpl.InvoiceErrorPersister invoiceErrorPersister;
     @Mock private HttpClient httpClient;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonMapper objectMapper = new JsonMapper();
 
     private final FacturacionProperties facturacionProperties = new FacturacionProperties(
             new FacturacionProperties.Emisor(

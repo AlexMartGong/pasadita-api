@@ -1,6 +1,5 @@
 package com.pasadita.api.security.filter;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pasadita.api.security.SimpleGrantedAuthorityJsonCreator;
 import com.pasadita.api.security.TokenJwtConfig;
 import io.jsonwebtoken.Claims;
@@ -16,6 +15,8 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -27,13 +28,15 @@ import static com.pasadita.api.security.TokenJwtConfig.*;
 
 public class JwtValidationFilter extends BasicAuthenticationFilter {
 
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
     private final TokenJwtConfig tokenConfig;
 
     public JwtValidationFilter(AuthenticationManager authenticationManager, TokenJwtConfig tokenConfig) {
         super(authenticationManager);
         this.tokenConfig = tokenConfig;
-        this.objectMapper = new ObjectMapper().addMixIn(SimpleGrantedAuthority.class, SimpleGrantedAuthorityJsonCreator.class);
+        this.objectMapper = JsonMapper.builder()
+                .addMixIn(SimpleGrantedAuthority.class, SimpleGrantedAuthorityJsonCreator.class)
+                .build();
     }
 
     @Override
@@ -67,7 +70,7 @@ public class JwtValidationFilter extends BasicAuthenticationFilter {
             UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(username, null, authorities);
             SecurityContextHolder.getContext().setAuthentication(authenticationToken);
             chain.doFilter(request, response);
-        } catch (JwtException | IllegalArgumentException | IOException | ServletException e) {
+        } catch (JwtException | JacksonException | IllegalArgumentException | IOException | ServletException e) {
             Map<String, String> body = Map.of(
                     "message", "Invalid token",
                     "error", e.getMessage()

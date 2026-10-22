@@ -1,6 +1,5 @@
 package com.pasadita.api.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,6 +10,7 @@ import org.springframework.web.socket.PingMessage;
 import org.springframework.web.socket.PongMessage;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.net.URI;
 import java.time.Clock;
@@ -39,7 +39,7 @@ class PrinterWebSocketHandlerTest {
     @BeforeEach
     void setUp() {
         lenient().when(clock.instant()).thenReturn(T0);
-        handler = new PrinterWebSocketHandler(new ObjectMapper(), clock);
+        handler = new PrinterWebSocketHandler(new JsonMapper(), clock);
     }
 
     private static WebSocketSession openSession(String sessionId) {

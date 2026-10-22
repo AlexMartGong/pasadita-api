@@ -1,7 +1,5 @@
 package com.pasadita.api.services.invoice;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pasadita.api.config.FacturacionProperties;
 import com.pasadita.api.dto.invoice.InvoiceCreateDto;
 import com.pasadita.api.dto.invoice.InvoiceMapper;
@@ -30,6 +28,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -68,7 +69,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final Facturapi facturapi;
     private final InvoiceErrorPersister invoiceErrorPersister;
     private final HttpClient httpClient;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
     private final FacturacionProperties facturacionProperties;
     private final String facturapiSecret;
 
@@ -79,7 +80,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                               Facturapi facturapi,
                               InvoiceErrorPersister invoiceErrorPersister,
                               HttpClient httpClient,
-                              ObjectMapper objectMapper,
+                              JsonMapper objectMapper,
                               FacturacionProperties facturacionProperties,
                               @Value("${facturapi.key:}") String facturapiSecret) {
         this.invoiceRepository = invoiceRepository;
@@ -229,7 +230,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 throw new BusinessRuleException(
                         "Facturapi rechazó envío de correo (HTTP " + status + "): " + response.body());
             }
-        } catch (IOException ex) {
+        } catch (IOException | JacksonException ex) {
             throw new BusinessRuleException("Falla I/O al enviar correo CFDI vía Facturapi: " + ex.getMessage());
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
@@ -383,7 +384,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                         "Facturapi rechazó factura (HTTP " + status + "): " + response.body());
             }
             return objectMapper.readTree(response.body());
-        } catch (IOException ex) {
+        } catch (IOException | JacksonException ex) {
             throw new BusinessRuleException("Falla I/O al timbrar CFDI vía Facturapi: " + ex.getMessage());
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
@@ -448,8 +449,8 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     private void applyStampedResult(Invoice invoice, JsonNode stamped) {
-        String remoteId = stamped.get("id").asText();
-        String uuid = stamped.get("uuid").asText();
+        String remoteId = stamped.get("id").asString();
+        String uuid = stamped.get("uuid").asString();
         invoice.setStatus(InvoiceStatus.TIMBRADA);
         invoice.setUuid(uuid);
         invoice.setXmlUrl(FACTURAPI_INVOICE_URL + remoteId + "/xml");

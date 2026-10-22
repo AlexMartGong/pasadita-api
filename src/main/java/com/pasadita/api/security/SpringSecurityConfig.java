@@ -17,6 +17,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfigurationSource;
+import tools.jackson.databind.json.JsonMapper;
 
 @Configuration
 @EnableMethodSecurity(securedEnabled = true, jsr250Enabled = true)
@@ -45,14 +46,14 @@ public class SpringSecurityConfig {
     }
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http, JsonMapper jsonMapper) throws Exception {
         return http.cors(cors ->
                         cors.configurationSource(corsConfigurationSource))
                 .authorizeHttpRequests((auth) ->
                         auth.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                                 .requestMatchers("/ws/**").permitAll()
                                 .anyRequest().authenticated()
-                ).addFilter(new JwtAuthenticationFilter(authenticationManager(), tokenConfig, employeeRepository))
+                ).addFilter(new JwtAuthenticationFilter(authenticationManager(), tokenConfig, employeeRepository, jsonMapper))
                 .addFilter(new JwtValidationFilter(authenticationManager(), tokenConfig))
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(management ->

@@ -1,13 +1,10 @@
 package com.pasadita.api.config;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pasadita.api.dto.ticket.TicketResponseDto;
 import com.pasadita.api.utils.DateTimeUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.lang.NonNull;
+import org.jspecify.annotations.NonNull;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -18,6 +15,9 @@ import org.springframework.web.socket.WebSocketMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.net.URI;
@@ -42,7 +42,7 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
     // Values are the ConcurrentWebSocketSessionDecorator; its getId() delegates to the raw session id
     private final Map<String, WebSocketSession> stations = new ConcurrentHashMap<>();
     private final Map<String, Instant> lastSeenBySessionId = new ConcurrentHashMap<>();
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
     private final Clock clock;
 
     @Override
@@ -77,7 +77,7 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
         String payload = message.getPayload();
         try {
             JsonNode json = objectMapper.readTree(payload);
-            if (PRINT_RESULT_TYPE.equals(json.path("type").asText())) {
+            if (PRINT_RESULT_TYPE.equals(json.path("type").asString())) {
                 if (json.path("success").isBoolean() && !json.path("success").asBoolean()) {
                     log.warn("PRINT_RESULT fallido - StationId: {}, SessionId: {}, Payload: {}",
                             stationId, session.getId(), payload);
@@ -88,7 +88,7 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
                 return;
             }
             log.info("Mensaje recibido de estación {} (SessionId: {}): {}", stationId, session.getId(), payload);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Mensaje no JSON recibido de estación {} (SessionId: {}): {}", stationId, session.getId(), payload);
         }
     }
@@ -135,7 +135,7 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
         try {
             TextMessage message = new TextMessage(objectMapper.writeValueAsString(ticket));
             return deliver(stationId, session, message, "ticket");
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Error al serializar ticket para estación {}: {}", stationId, e.getMessage(), e);
             return false;
         }
@@ -158,7 +158,7 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
                     "timestamp", DateTimeUtils.nowUtc().toString()
             ));
             return deliver(stationId, session, new TextMessage(json), "OPEN_DRAWER");
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Error al serializar OPEN_DRAWER para estación {}: {}", stationId, e.getMessage(), e);
             return false;
         }
@@ -171,7 +171,7 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
         TextMessage message;
         try {
             message = new TextMessage(objectMapper.writeValueAsString(ticket));
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Error al serializar ticket: {}", e.getMessage(), e);
             return 0;
         }
