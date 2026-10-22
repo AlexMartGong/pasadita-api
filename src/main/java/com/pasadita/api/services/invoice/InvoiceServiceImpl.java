@@ -17,8 +17,6 @@ import com.pasadita.api.repositories.CustomerFiscalDataRepository;
 import com.pasadita.api.repositories.InvoiceRepository;
 import com.pasadita.api.repositories.SaleRepository;
 import com.pasadita.api.utils.DateTimeUtils;
-import io.facturapi.Facturapi;
-import io.facturapi.FacturapiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -66,7 +64,6 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final SaleRepository saleRepository;
     private final CustomerFiscalDataRepository fiscalDataRepository;
     private final InvoiceMapper invoiceMapper;
-    private final Facturapi facturapi;
     private final InvoiceErrorPersister invoiceErrorPersister;
     private final HttpClient httpClient;
     private final JsonMapper objectMapper;
@@ -77,7 +74,6 @@ public class InvoiceServiceImpl implements InvoiceService {
                               SaleRepository saleRepository,
                               CustomerFiscalDataRepository fiscalDataRepository,
                               InvoiceMapper invoiceMapper,
-                              Facturapi facturapi,
                               InvoiceErrorPersister invoiceErrorPersister,
                               HttpClient httpClient,
                               JsonMapper objectMapper,
@@ -87,7 +83,6 @@ public class InvoiceServiceImpl implements InvoiceService {
         this.saleRepository = saleRepository;
         this.fiscalDataRepository = fiscalDataRepository;
         this.invoiceMapper = invoiceMapper;
-        this.facturapi = facturapi;
         this.invoiceErrorPersister = invoiceErrorPersister;
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
@@ -106,7 +101,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     /**
-     * Deliberately NOT @Transactional: the Facturapi SDK/HTTP calls can take up to 20 s and must
+     * Deliberately NOT @Transactional: the Facturapi stamping call can take several seconds and must
      * not hold a MySQL connection. Flow is three phases — persist PENDIENTE (short repository tx),
      * remote stamping outside any tx, then persist the TIMBRADA outcome (short tx). The Sale is
      * fully fetched via @EntityGraph, and every out-of-tx save returns a merge copy whose LAZY
@@ -132,11 +127,6 @@ public class InvoiceServiceImpl implements InvoiceService {
         JsonNode stamped;
         try {
             stamped = stampThroughFacturapi(sale, fiscalData);
-        } catch (FacturapiException ex) {
-            log.error("Facturapi rejected stamping for sale {} (status={}, code={}, path={}): {}",
-                    sale.getId(), ex.getStatusCode(), ex.getErrorCode(), ex.getErrorPath(), ex.getMessage());
-            invoiceErrorPersister.markAsError(invoice.getInvoiceId());
-            throw new BusinessRuleException("Error al timbrar CFDI: " + ex.getMessage());
         } catch (BusinessRuleException ex) {
             log.error("Stamping rejected for sale {}: {}", sale.getId(), ex.getMessage());
             invoiceErrorPersister.markAsError(invoice.getInvoiceId());
@@ -344,21 +334,22 @@ public class InvoiceServiceImpl implements InvoiceService {
         return saved;
     }
 
+    /**
+     * One HTTP round trip regardless of the number of items: the customer and every product travel
+     * inline in the invoice payload (Facturapi accepts an object instead of a catalog id). Registering
+     * them first cost one sequential call per sale line, so large sales outlasted the client's
+     * request timeout and every invoice left duplicate customers/products in the Facturapi catalog.
+     */
     private JsonNode stampThroughFacturapi(Sale sale, CustomerFiscalData fiscalData) {
-        io.facturapi.models.Customer fiscalCustomer = facturapi.customers().create(
-                buildCustomerPayload(fiscalData), null);
-
         boolean applyIsrRetention = appliesResicoIsrRetention(fiscalData);
 
         List<Map<String, Object>> items = new ArrayList<>(sale.getSaleDetails().size());
         for (SaleDetail detail : sale.getSaleDetails()) {
-            io.facturapi.models.Product remoteProduct = facturapi.products().create(
-                    buildProductPayload(detail, applyIsrRetention));
-            items.add(buildItemPayload(detail, remoteProduct.getId()));
+            items.add(buildItemPayload(detail, buildProductPayload(detail, applyIsrRetention)));
         }
 
         Map<String, Object> invoicePayload = Map.of(
-                "customer", fiscalCustomer.getId(),
+                "customer", buildCustomerPayload(fiscalData),
                 "items", items,
                 "payment_form", sale.getPaymentMethod().getClaveFormaPagoSat(),
                 "payment_method", "PUE",
@@ -440,10 +431,10 @@ public class InvoiceServiceImpl implements InvoiceService {
                 && rfc.trim().length() == PERSONA_MORAL_RFC_LENGTH;
     }
 
-    private Map<String, Object> buildItemPayload(SaleDetail detail, String remoteProductId) {
+    private Map<String, Object> buildItemPayload(SaleDetail detail, Map<String, Object> product) {
         return Map.of(
                 "quantity", detail.getQuantity(),
-                "product", remoteProductId,
+                "product", product,
                 "discount", detail.getDiscount() != null ? detail.getDiscount() : BigDecimal.ZERO
         );
     }

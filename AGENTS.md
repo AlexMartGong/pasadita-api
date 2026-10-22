@@ -50,11 +50,12 @@ Compact repo-specific guidance for OpenCode sessions.
 
 ## Invoicing (CFDI) Quirks
 
-- Uses Facturapi SDK 1.2.0 for customer/product creation, but **the invoice POST bypasses the SDK** because its deserializer is incompatible with CFDI 4.0 responses.
+- **One HTTP request per invoice**, whatever the number of sale lines: `POST /v2/invoices` with the customer and every product sent **inline** as objects (not catalog ids). Never pre-register customers/products per invoice (`customers().create` / `products().create`): 1 + N sequential round trips made large sales exceed the frontend's 10 s axios timeout and duplicated catalog entries.
+- The response is parsed as a Jackson `JsonNode` (only `id`/`uuid`), not through SDK models, so a model mismatch can never fail a call whose CFDI is already stamped.
 - Direct REST call is made via JDK `HttpClient` bean (`facturapiHttpClient`) with `Authorization: Bearer ${facturapi.key}`.
-- `FacturapiConfig` exposes both the SDK bean and the shared `HttpClient` bean (`@Bean(destroyMethod = "close")` — singleton, never close per call).
+- `FacturapiConfig` exposes both the SDK bean (`facturapi-java` 2.2.0; not consumed by any service today) and the shared `HttpClient` bean (`@Bean(destroyMethod = "close")` — singleton, never close per call).
 - **Row reuse** (`Invoice.sale_id` is UNIQUE): `createInvoiceRequest` and `timbrarInvoice` share `findOrCreatePendingInvoice` — an existing `PENDIENTE`/`ERROR` row is updated in place (fiscal data refreshed, status reset to `PENDIENTE`); `TIMBRADA`/`CANCELADA` are finalized and throw `BusinessRuleException`. Never insert a second `Invoice` for the same sale.
-- **Transaction isolation**: `timbrarInvoice`/`cancelInvoice`/`sendInvoiceEmail` are deliberately **not** `@Transactional` — remote Facturapi calls (20 s timeouts) must not hold a DB connection. Three phases: persist `PENDIENTE` (short repo tx) → remote call outside tx → persist `TIMBRADA`/`ERROR` (short tx). `SaleRepository.findWithDetailsById` `@EntityGraph` prefetches everything, so no lazy loads outside a tx. Error status persists via inner `InvoiceErrorPersister` (`REQUIRES_NEW`).
+- **Transaction isolation**: `timbrarInvoice`/`cancelInvoice`/`sendInvoiceEmail` are deliberately **not** `@Transactional` — remote Facturapi calls (stamping can take several seconds) must not hold a DB connection. Three phases: persist `PENDIENTE` (short repo tx) → remote call outside tx → persist `TIMBRADA`/`ERROR` (short tx). `SaleRepository.findWithDetailsById` `@EntityGraph` prefetches everything, so no lazy loads outside a tx. Error status persists via inner `InvoiceErrorPersister` (`REQUIRES_NEW`).
 - **Error transparency**: `BusinessRuleException` from stamping (e.g. Facturapi HTTP 4xx body) is rethrown as-is after `markAsError` — do not wrap it in a generic message.
 
 ## Object Storage (Cloudflare R2)

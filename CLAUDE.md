@@ -194,7 +194,8 @@ com.pasadita.api/
 - **Facturación (CFDI)**: `facturacion.emisor.*` (rfc, razon-social, regimen-fiscal, codigo-postal) and
   `facturacion.csd.*` (cer-path, key-path, password) are bound to `FacturacionProperties` (under `config/`).
   `facturapi.key` (env `FACTURAPI_KEY`) is the Facturapi secret bearer token; `FacturapiConfig` exposes both the
-  `Facturapi` SDK bean and a shared `HttpClient` bean (`facturapiHttpClient`, declared with
+  `Facturapi` SDK bean (`io.facturapi:facturapi-java` 2.2.0; no service consumes it today — every Facturapi call goes
+  through the `HttpClient`) and a shared `HttpClient` bean (`facturapiHttpClient`, declared with
   `@Bean(destroyMethod = "close")` — it's a singleton, never close it per call; the container closes it on
   shutdown) used for direct REST calls and proxy downloads. Dev `application.properties` provides dummy fallback defaults for `CSD_*` and `FACTURAPI_KEY`, so local
   runs/tests start without real secrets; production requires the real env vars
@@ -280,7 +281,7 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
 - Uses Spring Boot Test framework
 - Main test class: `PasaditaApiApplicationTests`
 - Pure Mockito unit tests (no Spring context) for service rules: `InvoiceServiceImplTest` (stamping happy path,
-  RESICO ISR retention, SAT catalog validation, `PENDIENTE`/`ERROR` row reuse vs. finalized rejection, Facturapi
+  single Facturapi request with inline customer/products regardless of item count, RESICO ISR retention, SAT catalog validation, `PENDIENTE`/`ERROR` row reuse vs. finalized rejection, Facturapi
   rejection message transparency + `markAsError`, cancel/email flows), `SaleServiceImplTest`
   (discount rule: range bounds, cap, per-quantity accumulation, derived sale totals), `PrinterWebSocketHandlerTest`
   (late close of a replaced session keeps the new one, closing the current session removes it, replacement closes the
@@ -373,12 +374,16 @@ Current domains include:
       unique constraint → `DataIntegrityViolationException` 500); `TIMBRADA`/`CANCELADA` are finalized and throw
       `BusinessRuleException`
     - DTOs/services under `dto/invoice/` and `services/invoice/`
-    - **Stamping flow** (`InvoiceServiceImpl.timbrarInvoice`): customer + product creation use the Facturapi Java SDK,
-      but the invoice POST is sent through the JDK `HttpClient` (`POST https://www.facturapi.io/v2/invoices` with
-      `Authorization: Bearer ${facturapi.key}`) and parsed via Jackson `JsonNode`. The SDK 1.2.0 invoice deserializer
-      is incompatible with CFDI 4.0 responses, so it is bypassed for that step
+    - **Stamping flow** (`InvoiceServiceImpl.timbrarInvoice`): exactly **one** HTTP request per invoice, whatever the
+      number of sale lines — `POST https://www.facturapi.io/v2/invoices` through the JDK `HttpClient`
+      (`Authorization: Bearer ${facturapi.key}`) with the customer (`buildCustomerPayload`) and every product
+      (`buildProductPayload`) sent **inline** as objects instead of catalog ids. Never pre-register customers/products
+      (`customers().create` / `products().create`) per invoice: that was 1 + N sequential round trips, so large sales
+      outlasted the frontend's 10 s axios timeout (`AxiosError: timeout of 10000ms exceeded`) and every invoice
+      duplicated catalog entries. The response is read as a Jackson `JsonNode` (only `id`/`uuid`), not through the SDK
+      models, so a response-model mismatch can never fail a call whose CFDI is already stamped at SAT
     - **Transaction isolation**: `timbrarInvoice`, `cancelInvoice`, and `sendInvoiceEmail` are deliberately **not**
-      `@Transactional` — Facturapi SDK/HTTP calls (up to 20 s timeout) must not hold a MySQL/Hikari connection.
+      `@Transactional` — Facturapi HTTP calls (stamping can take several seconds) must not hold a MySQL/Hikari connection.
       Flow is three phases: persist `PENDIENTE` (short implicit repository tx), remote call outside any tx, persist
       `TIMBRADA`/`ERROR` result (short tx). Safe because `SaleRepository.findWithDetailsById` eager-fetches via
       `@EntityGraph` everything the stamping path touches (no lazy loads outside a tx). `createInvoiceRequest` and

@@ -17,10 +17,6 @@ import com.pasadita.api.exceptions.EntityNotFoundException;
 import com.pasadita.api.repositories.CustomerFiscalDataRepository;
 import com.pasadita.api.repositories.InvoiceRepository;
 import com.pasadita.api.repositories.SaleRepository;
-import io.facturapi.Facturapi;
-import io.facturapi.FacturapiException;
-import io.facturapi.resources.CustomersResource;
-import io.facturapi.resources.ProductsResource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,20 +27,24 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Flow;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -59,9 +59,6 @@ class InvoiceServiceImplTest {
     @Mock private SaleRepository saleRepository;
     @Mock private CustomerFiscalDataRepository fiscalDataRepository;
     @Mock private InvoiceMapper invoiceMapper;
-    @Mock private Facturapi facturapi;
-    @Mock private CustomersResource customersResource;
-    @Mock private ProductsResource productsResource;
     @Mock private InvoiceServiceImpl.InvoiceErrorPersister invoiceErrorPersister;
     @Mock private HttpClient httpClient;
 
@@ -86,7 +83,6 @@ class InvoiceServiceImplTest {
                 saleRepository,
                 fiscalDataRepository,
                 invoiceMapper,
-                facturapi,
                 invoiceErrorPersister,
                 httpClient,
                 objectMapper,
@@ -164,17 +160,6 @@ class InvoiceServiceImplTest {
                         .pdfUrl(((Invoice) inv.getArgument(0)).getPdfUrl())
                         .build());
 
-        when(facturapi.customers()).thenReturn(customersResource);
-        when(facturapi.products()).thenReturn(productsResource);
-
-        io.facturapi.models.Customer remoteCustomer = new io.facturapi.models.Customer();
-        remoteCustomer.setId("cus_1");
-        when(customersResource.create(anyMap(), any())).thenReturn(remoteCustomer);
-
-        io.facturapi.models.Product remoteProduct = new io.facturapi.models.Product();
-        remoteProduct.setId("prod_1");
-        when(productsResource.create(anyMap())).thenReturn(remoteProduct);
-
         HttpResponse<String> stampedResponse = (HttpResponse<String>) mock(HttpResponse.class);
         when(stampedResponse.statusCode()).thenReturn(200);
         when(stampedResponse.body()).thenReturn(
@@ -198,47 +183,133 @@ class InvoiceServiceImplTest {
         assertThat(sent.headers().firstValue("Authorization")).contains("Bearer test-secret");
         assertThat(sent.headers().firstValue("Content-Type")).contains("application/json");
 
+        // Customer and product travel inline (objects, not catalog ids)
+        JsonNode payload = objectMapper.readTree(bodyOf(sent));
+        JsonNode customer = payload.get("customer");
+        assertThat(customer.isObject()).isTrue();
+        assertThat(customer.get("tax_id").asString()).isEqualTo("XAXX010101000");
+        assertThat(customer.get("legal_name").asString()).isEqualTo("PUBLICO EN GENERAL");
+        assertThat(customer.get("tax_system").asString()).isEqualTo("616");
+        assertThat(customer.get("address").get("zip").asString()).isEqualTo("46400");
+
+        JsonNode item = payload.get("items").get(0);
+        assertThat(item.get("quantity").decimalValue()).isEqualByComparingTo("2.000");
+        JsonNode product = item.get("product");
+        assertThat(product.isObject()).isTrue();
+        assertThat(product.get("description").asString()).isEqualTo("Plátano");
+        assertThat(product.get("product_key").asString()).isEqualTo("50301500");
+        assertThat(product.get("price").decimalValue()).isEqualByComparingTo("20.00");
+        assertThat(product.get("sku").asString()).isEqualTo("10");
+
         verify(invoiceErrorPersister, never()).markAsError(any());
         verify(invoiceRepository, times(2)).save(any(Invoice.class));
     }
 
     @Test
     @SuppressWarnings("unchecked")
+    void timbrarInvoice_manyItems_stampsWithSingleFacturapiRequest() throws Exception {
+        // Regression: one remote call per sale line made large sales exceed the client timeout
+        int itemCount = 60;
+        List<SaleDetail> details = new ArrayList<>(itemCount);
+        for (long i = 1; i <= itemCount; i++) {
+            Product product = Product.builder()
+                    .id(i)
+                    .name("Producto " + i)
+                    .price(new BigDecimal("15.00"))
+                    .unitMeasure(UnitMeasure.KILOGRAMO)
+                    .claveProductoSat("50301500")
+                    .active(true)
+                    .build();
+            details.add(SaleDetail.builder()
+                    .id(1000L + i)
+                    .sale(sale)
+                    .product(product)
+                    .quantity(new BigDecimal("1.500"))
+                    .unitPrice(new BigDecimal("15.00"))
+                    .subtotal(new BigDecimal("22.50"))
+                    .discount(BigDecimal.ZERO)
+                    .total(new BigDecimal("22.50"))
+                    .build());
+        }
+        sale.setSaleDetails(details);
+        stubSuccessfulStamping();
+
+        service.timbrarInvoice(dto);
+
+        ArgumentCaptor<HttpRequest> requestCaptor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient, times(1)).send(requestCaptor.capture(), any(HttpResponse.BodyHandler.class));
+        JsonNode items = objectMapper.readTree(bodyOf(requestCaptor.getValue())).get("items");
+        assertThat(items.size()).isEqualTo(itemCount);
+        for (int i = 0; i < itemCount; i++) {
+            JsonNode product = items.get(i).get("product");
+            assertThat(product.isObject()).isTrue();
+            assertThat(product.get("description").asString()).isEqualTo("Producto " + (i + 1));
+        }
+    }
+
+    @Test
     void timbrarInvoice_resicoPersonaMoral_addsIsrRetentionToProductTaxes() throws Exception {
         // 12-char RFC => persona moral; emisor regimen is 626 (RESICO) => retention applies
         fiscalData.setRfc("ABC101010AB1");
         stubSuccessfulStamping();
 
-        ArgumentCaptor<Map<String, Object>> productCaptor = ArgumentCaptor.forClass(Map.class);
-
         service.timbrarInvoice(dto);
 
-        verify(productsResource).create(productCaptor.capture());
-        List<Map<String, Object>> taxes =
-                (List<Map<String, Object>>) productCaptor.getValue().get("taxes");
-        assertThat(taxes).anySatisfy(tax -> {
-            assertThat(tax.get("type")).isEqualTo("ISR");
-            assertThat(tax.get("rate")).isEqualTo(new BigDecimal("0.0125"));
-            assertThat(tax.get("factor")).isEqualTo("Tasa");
-            assertThat(tax.get("withholding")).isEqualTo(true);
-        });
+        JsonNode taxes = sentProductTaxes();
+        assertThat(taxes.size()).isEqualTo(2);
+        JsonNode isr = taxes.get(1);
+        assertThat(isr.get("type").asString()).isEqualTo("ISR");
+        assertThat(isr.get("rate").decimalValue()).isEqualByComparingTo("0.0125");
+        assertThat(isr.get("factor").asString()).isEqualTo("Tasa");
+        assertThat(isr.get("withholding").booleanValue()).isTrue();
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void timbrarInvoice_personaFisica_doesNotAddIsrRetention() throws Exception {
         // default fiscalData RFC "XAXX010101000" is 13 chars => persona física => no retention
         stubSuccessfulStamping();
 
-        ArgumentCaptor<Map<String, Object>> productCaptor = ArgumentCaptor.forClass(Map.class);
-
         service.timbrarInvoice(dto);
 
-        verify(productsResource).create(productCaptor.capture());
-        List<Map<String, Object>> taxes =
-                (List<Map<String, Object>>) productCaptor.getValue().get("taxes");
-        assertThat(taxes).noneSatisfy(tax -> assertThat(tax.get("type")).isEqualTo("ISR"));
-        assertThat(taxes).hasSize(1);
+        JsonNode taxes = sentProductTaxes();
+        assertThat(taxes.size()).isEqualTo(1);
+        assertThat(taxes.get(0).get("type").asString()).isEqualTo("IVA");
+    }
+
+    @SuppressWarnings("unchecked")
+    private JsonNode sentProductTaxes() throws Exception {
+        ArgumentCaptor<HttpRequest> requestCaptor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(requestCaptor.capture(), any(HttpResponse.BodyHandler.class));
+        return objectMapper.readTree(bodyOf(requestCaptor.getValue()))
+                .get("items").get(0).get("product").get("taxes");
+    }
+
+    // Drains the request's BodyPublisher (the JSON actually sent to Facturapi)
+    private static String bodyOf(HttpRequest request) {
+        HttpResponse.BodySubscriber<String> subscriber =
+                HttpResponse.BodySubscribers.ofString(StandardCharsets.UTF_8);
+        request.bodyPublisher().orElseThrow().subscribe(new Flow.Subscriber<>() {
+            @Override
+            public void onSubscribe(Flow.Subscription subscription) {
+                subscriber.onSubscribe(subscription);
+            }
+
+            @Override
+            public void onNext(ByteBuffer item) {
+                subscriber.onNext(List.of(item));
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                subscriber.onError(throwable);
+            }
+
+            @Override
+            public void onComplete() {
+                subscriber.onComplete();
+            }
+        });
+        return subscriber.getBody().toCompletableFuture().join();
     }
 
     private void stubSuccessfulStamping() throws Exception {
@@ -249,17 +320,6 @@ class InvoiceServiceImplTest {
         when(invoiceRepository.save(any(Invoice.class))).thenAnswer(inv -> inv.getArgument(0));
         when(invoiceMapper.toResponseDto(any(Invoice.class)))
                 .thenReturn(InvoiceResponseDto.builder().status("TIMBRADA").build());
-
-        when(facturapi.customers()).thenReturn(customersResource);
-        when(facturapi.products()).thenReturn(productsResource);
-
-        io.facturapi.models.Customer remoteCustomer = new io.facturapi.models.Customer();
-        remoteCustomer.setId("cus_1");
-        when(customersResource.create(anyMap(), any())).thenReturn(remoteCustomer);
-
-        io.facturapi.models.Product remoteProduct = new io.facturapi.models.Product();
-        remoteProduct.setId("prod_1");
-        when(productsResource.create(anyMap())).thenReturn(remoteProduct);
 
         @SuppressWarnings("unchecked")
         HttpResponse<String> stampedResponse = (HttpResponse<String>) mock(HttpResponse.class);
@@ -318,17 +378,6 @@ class InvoiceServiceImplTest {
         when(invoiceMapper.toEntity(eq(dto), eq(sale), eq(fiscalData))).thenReturn(persistedInvoice);
         when(invoiceRepository.save(any(Invoice.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        when(facturapi.customers()).thenReturn(customersResource);
-        when(facturapi.products()).thenReturn(productsResource);
-
-        io.facturapi.models.Customer remoteCustomer = new io.facturapi.models.Customer();
-        remoteCustomer.setId("cus_1");
-        when(customersResource.create(anyMap(), any())).thenReturn(remoteCustomer);
-
-        io.facturapi.models.Product remoteProduct = new io.facturapi.models.Product();
-        remoteProduct.setId("prod_1");
-        when(productsResource.create(anyMap())).thenReturn(remoteProduct);
-
         HttpResponse<String> badResponse = (HttpResponse<String>) mock(HttpResponse.class);
         when(badResponse.statusCode()).thenReturn(400);
         when(badResponse.body()).thenReturn("{\"message\":\"CFDI40147 - uso CFDI inválido\"}");
@@ -345,7 +394,7 @@ class InvoiceServiceImplTest {
     }
 
     @Test
-    void timbrarInvoice_unpaidSale_throwsBusinessRule_andSkipsFacturapi() {
+    void timbrarInvoice_unpaidSale_throwsBusinessRule_andSkipsFacturapi() throws Exception {
         sale.setPaid(false);
         when(saleRepository.findWithDetailsById(sale.getId())).thenReturn(Optional.of(sale));
 
@@ -353,12 +402,12 @@ class InvoiceServiceImplTest {
                 .isInstanceOf(BusinessRuleException.class)
                 .hasMessageContaining("unpaid");
 
-        verify(facturapi, never()).customers();
+        verify(httpClient, never()).send(any(), any());
         verify(invoiceRepository, never()).save(any());
     }
 
     @Test
-    void timbrarInvoice_missingClaveProductoSat_throwsBusinessRule() {
+    void timbrarInvoice_missingClaveProductoSat_throwsBusinessRule() throws Exception {
         sale.getSaleDetails().getFirst().getProduct().setClaveProductoSat(null);
         when(saleRepository.findWithDetailsById(sale.getId())).thenReturn(Optional.of(sale));
         when(fiscalDataRepository.findById(fiscalData.getFiscalId())).thenReturn(Optional.of(fiscalData));
@@ -367,11 +416,11 @@ class InvoiceServiceImplTest {
                 .isInstanceOf(BusinessRuleException.class)
                 .hasMessageContaining("clave de producto");
 
-        verify(facturapi, never()).customers();
+        verify(httpClient, never()).send(any(), any());
     }
 
     @Test
-    void timbrarInvoice_missingClaveFormaPago_throwsBusinessRule() {
+    void timbrarInvoice_missingClaveFormaPago_throwsBusinessRule() throws Exception {
         sale.getPaymentMethod().setClaveFormaPagoSat(null);
         when(saleRepository.findWithDetailsById(sale.getId())).thenReturn(Optional.of(sale));
         when(fiscalDataRepository.findById(fiscalData.getFiscalId())).thenReturn(Optional.of(fiscalData));
@@ -380,11 +429,11 @@ class InvoiceServiceImplTest {
                 .isInstanceOf(BusinessRuleException.class)
                 .hasMessageContaining("forma de pago");
 
-        verify(facturapi, never()).customers();
+        verify(httpClient, never()).send(any(), any());
     }
 
     @Test
-    void timbrarInvoice_alreadyTimbrada_throwsBusinessRule() {
+    void timbrarInvoice_alreadyTimbrada_throwsBusinessRule() throws Exception {
         Invoice already = Invoice.builder()
                 .invoiceId(900L)
                 .sale(sale)
@@ -400,27 +449,25 @@ class InvoiceServiceImplTest {
                 .isInstanceOf(BusinessRuleException.class)
                 .hasMessageContaining("finalized");
 
-        verify(facturapi, never()).customers();
+        verify(httpClient, never()).send(any(), any());
     }
 
     @Test
-    void timbrarInvoice_facturapiFails_marksInvoiceAsError() throws Exception {
+    void timbrarInvoice_facturapiTimeout_marksInvoiceAsError() throws Exception {
         when(saleRepository.findWithDetailsById(sale.getId())).thenReturn(Optional.of(sale));
         when(fiscalDataRepository.findById(fiscalData.getFiscalId())).thenReturn(Optional.of(fiscalData));
         when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.empty());
         when(invoiceMapper.toEntity(eq(dto), eq(sale), eq(fiscalData))).thenReturn(persistedInvoice);
         when(invoiceRepository.save(any(Invoice.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        when(facturapi.customers()).thenReturn(customersResource);
-        when(customersResource.create(anyMap(), any()))
-                .thenThrow(new FacturapiException("RFC inválido", 400, "invalid_tax_id", "tax_id"));
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenThrow(new HttpTimeoutException("request timed out"));
 
         assertThatThrownBy(() -> service.timbrarInvoice(dto))
                 .isInstanceOf(BusinessRuleException.class)
-                .hasMessageContaining("Error al timbrar CFDI");
+                .hasMessageContaining("Falla I/O al timbrar CFDI");
 
         verify(invoiceErrorPersister).markAsError(persistedInvoice.getInvoiceId());
-        verify(httpClient, never()).send(any(), any());
     }
 
     @Test
@@ -644,17 +691,6 @@ class InvoiceServiceImplTest {
         when(invoiceMapper.toResponseDto(any(Invoice.class)))
                 .thenReturn(InvoiceResponseDto.builder().status("TIMBRADA").build());
 
-        when(facturapi.customers()).thenReturn(customersResource);
-        when(facturapi.products()).thenReturn(productsResource);
-
-        io.facturapi.models.Customer remoteCustomer = new io.facturapi.models.Customer();
-        remoteCustomer.setId("cus_1");
-        when(customersResource.create(anyMap(), any())).thenReturn(remoteCustomer);
-
-        io.facturapi.models.Product remoteProduct = new io.facturapi.models.Product();
-        remoteProduct.setId("prod_1");
-        when(productsResource.create(anyMap())).thenReturn(remoteProduct);
-
         HttpResponse<String> stampedResponse = (HttpResponse<String>) mock(HttpResponse.class);
         when(stampedResponse.statusCode()).thenReturn(200);
         when(stampedResponse.body()).thenReturn(
@@ -681,17 +717,6 @@ class InvoiceServiceImplTest {
         when(invoiceRepository.save(any(Invoice.class)))
                 .thenAnswer(inv -> inv.getArgument(0))
                 .thenThrow(new RuntimeException("DB down"));
-
-        when(facturapi.customers()).thenReturn(customersResource);
-        when(facturapi.products()).thenReturn(productsResource);
-
-        io.facturapi.models.Customer remoteCustomer = new io.facturapi.models.Customer();
-        remoteCustomer.setId("cus_1");
-        when(customersResource.create(anyMap(), any())).thenReturn(remoteCustomer);
-
-        io.facturapi.models.Product remoteProduct = new io.facturapi.models.Product();
-        remoteProduct.setId("prod_1");
-        when(productsResource.create(anyMap())).thenReturn(remoteProduct);
 
         HttpResponse<String> stampedResponse = (HttpResponse<String>) mock(HttpResponse.class);
         when(stampedResponse.statusCode()).thenReturn(200);
