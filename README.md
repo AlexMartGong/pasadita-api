@@ -37,11 +37,11 @@ A comprehensive RESTful API for managing a small business, built with Spring Boo
 
 ## Technology Stack
 
-- **Framework**: Spring Boot 3.5.15
+- **Framework**: Spring Boot 4.1.2 (Spring Framework 7, Spring Security 7, Hibernate 7, Jackson 3)
 - **Language**: Java 21
 - **Database**: MySQL 8.x
 - **ORM**: Spring Data JPA / Hibernate
-- **Security**: Spring Security with JWT (JJWT 0.12.6)
+- **Security**: Spring Security with JWT (JJWT 0.13.0)
 - **Real-time**: Spring WebSocket (printer stations)
 - **Invoicing**: Facturapi (CFDI 4.0 stamping)
 - **Object Storage**: Cloudflare R2 (S3-compatible) via AWS SDK v2
