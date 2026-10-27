@@ -49,7 +49,7 @@ A comprehensive RESTful API for managing a small business, built with Spring Boo
 - **Build Tool**: Maven 3.x
 - **Containers**: Docker + Docker Compose (local testing stack)
 - **Code Quality**: Qodana JVM Community linter
-- **CI/CD**: GitHub Actions (deploy to DigitalOcean on `main` push, Qodana on PRs)
+- **CI/CD**: GitHub Actions (deploy to a Netcup VPS over SSH + Docker Compose on `main` push, Qodana on PRs)
 - **Additional Libraries**:
   - Lombok (reduce boilerplate code)
   - Spring Boot Actuator (monitoring)

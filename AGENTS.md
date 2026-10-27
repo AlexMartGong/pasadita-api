@@ -93,7 +93,7 @@ Compact repo-specific guidance for OpenCode sessions.
 
 ## CI/CD
 
-- **Deploy**: Push to `main` triggers a GitHub Actions workflow that builds `./mvnw clean package -DskipTests`, SCPs the JAR to a DigitalOcean droplet, and restarts a `systemd` service (`pasadita`).
+- **Deploy**: Push to `main` triggers a GitHub Actions workflow that builds `./mvnw clean package -DskipTests`, copies the JAR and `Dockerfile` to a Netcup VPS over SSH, then rebuilds the `lapasadita-api:prod` image and restarts it with `docker compose up -d`.
 - **Lint**: Qodana JVM Community runs on PRs and `main` pushes.
 
 ## WebSocket
