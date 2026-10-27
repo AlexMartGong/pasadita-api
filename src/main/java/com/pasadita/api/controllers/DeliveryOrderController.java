@@ -7,12 +7,14 @@ import com.pasadita.api.dto.deliveryorder.DeliveryOrderSummaryDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderUpdateDto;
 import com.pasadita.api.exceptions.EntityNotFoundException;
 import com.pasadita.api.services.deliveryorder.DeliveryOrderService;
+import com.pasadita.api.utils.SecurityUtils;
 import com.pasadita.api.utils.ValidationUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,12 +33,13 @@ public class DeliveryOrderController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @PostMapping("/save")
-    public ResponseEntity<DeliveryOrderResponseDto> saveDeliveryOrder(@Valid @RequestBody DeliveryOrderCreateDto deliveryOrderCreateDto, BindingResult result) {
+    public ResponseEntity<DeliveryOrderResponseDto> saveDeliveryOrder(@Valid @RequestBody DeliveryOrderCreateDto deliveryOrderCreateDto, BindingResult result,
+                                                                      Authentication authentication) {
         if (result.hasErrors()) {
             return ResponseEntity.badRequest().build();
         }
 
-        DeliveryOrderResponseDto responseDto = deliveryOrderService.save(deliveryOrderCreateDto)
+        DeliveryOrderResponseDto responseDto = deliveryOrderService.save(deliveryOrderCreateDto, SecurityUtils.isAdmin(authentication))
                 .orElseThrow(() -> new EntityNotFoundException("Could not save delivery order"));
         return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
     }

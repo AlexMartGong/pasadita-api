@@ -43,6 +43,7 @@ create table customers
     custom_discount  decimal(5, 2)        null,
     notes            text                 null,
     active           tinyint(1) default 1 null,
+    credit_limit     decimal(10, 2) default 0.00 not null,
     constraint customers_ibfk_1
         foreign key (customer_type_id) references customertypes (customer_type_id)
 );
@@ -112,6 +113,31 @@ create table sales
     constraint sales_ibfk_3
         foreign key (payment_method_id) references paymentmethods (payment_method_id)
 );
+
+create table sale_payments
+(
+    payment_id        bigint auto_increment
+        primary key,
+    sale_id           bigint                             not null,
+    employee_id       bigint                             not null,
+    payment_method_id bigint                             not null,
+    amount            decimal(10, 2)                     not null,
+    datetime          datetime default CURRENT_TIMESTAMP null,
+    notes             varchar(200)                       null,
+    client_request_id varchar(36)                        null,
+    constraint sale_payments_ibfk_sale
+        foreign key (sale_id) references sales (sale_id),
+    constraint sale_payments_ibfk_employee
+        foreign key (employee_id) references employees (employee_id),
+    constraint sale_payments_ibfk_method
+        foreign key (payment_method_id) references paymentmethods (payment_method_id)
+);
+
+create index idx_sale_payments_sale
+    on sale_payments (sale_id);
+
+create index idx_sale_payments_request
+    on sale_payments (client_request_id);
 
 create table deliveryorders
 (

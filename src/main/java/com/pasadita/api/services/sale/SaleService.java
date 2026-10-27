@@ -13,7 +13,7 @@ import java.util.Optional;
 public interface SaleService {
     List<SaleResponseDto> findAll();
 
-    Optional<SaleResponseDto> save(SaleCreateDto saleCreateDto);
+    Optional<SaleResponseDto> save(SaleCreateDto saleCreateDto, boolean requestedByAdmin);
 
     Optional<SaleResponseDto> update(Long id, SaleUpdateDto saleUpdateDto);
 

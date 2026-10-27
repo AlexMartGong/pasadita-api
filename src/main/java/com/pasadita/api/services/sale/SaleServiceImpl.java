@@ -17,6 +17,8 @@ import com.pasadita.api.repositories.PaymentMethodRepository;
 import com.pasadita.api.repositories.ProductRepository;
 import com.pasadita.api.repositories.SaleRepository;
 import com.pasadita.api.repositories.SaleDetailRepository;
+import com.pasadita.api.repositories.SalePaymentRepository;
+import com.pasadita.api.services.account.CustomerAccountService;
 import com.pasadita.api.services.saledetail.SaleDetailService;
 import com.pasadita.api.exceptions.BusinessRuleException;
 import com.pasadita.api.exceptions.EntityNotFoundException;
@@ -27,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -48,6 +51,8 @@ public class SaleServiceImpl implements SaleService {
     private final DeliveryOrderMapper deliveryOrderMapper;
     private final SaleDetailService saleDetailService;
     private final SaleDetailRepository saleDetailRepository;
+    private final SalePaymentRepository salePaymentRepository;
+    private final CustomerAccountService customerAccountService;
 
     @Override
     @Transactional(readOnly = true)
@@ -59,9 +64,12 @@ public class SaleServiceImpl implements SaleService {
     }
 
     @Override
-    public Optional<SaleResponseDto> save(SaleCreateDto saleCreateDto) {
+    public Optional<SaleResponseDto> save(SaleCreateDto saleCreateDto, boolean requestedByAdmin) {
         Employee employee = findEmployeeById(saleCreateDto.getEmployeeId());
         Customer customer = findCustomerById(saleCreateDto.getCustomerId());
+        if (saleCreateDto.getDeliveryOrder() != null) {
+            customerAccountService.assertCreditAllowsNewOrder(customer.getId(), requestedByAdmin);
+        }
         PaymentMethod paymentMethod = findPaymentMethodById(saleCreateDto.getPaymentMethodId());
         BigDecimal saleSubtotal = BigDecimal.ZERO;
         BigDecimal saleDiscountTotal = BigDecimal.ZERO;
@@ -134,6 +142,13 @@ public class SaleServiceImpl implements SaleService {
         Sale existingSale = saleRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Sale not found with id: " + id));
 
+        if (salePaymentRepository.existsBySaleId(id)) {
+            throw new BusinessRuleException("No se puede editar la venta #" + id + ": tiene abonos registrados");
+        }
+        if (!Objects.equals(existingSale.getPaid(), saleUpdateDto.getPaid()) && deliveryOrderRepository.existsBySaleId(id)) {
+            throw paidChangeOnDeliverySale(id);
+        }
+
         Employee employee = findEmployeeById(saleUpdateDto.getEmployeeId());
         Customer customer = findCustomerById(saleUpdateDto.getCustomerId());
         PaymentMethod paymentMethod = findPaymentMethodById(saleUpdateDto.getPaymentMethodId());
@@ -183,10 +198,20 @@ public class SaleServiceImpl implements SaleService {
         Sale sale = saleRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Sale not found with id: " + id));
 
+        if (deliveryOrderRepository.existsBySaleId(id)) {
+            throw paidChangeOnDeliverySale(id);
+        }
+
         sale.setPaid(changeStatusDto.getPaid());
         Sale updatedSale = saleRepository.save(sale);
 
         return Optional.ofNullable(saleMapper.toResponseDto(updatedSale));
+    }
+
+    // R8: on a sale with a delivery order, paid only moves together with the order status (collections and payments)
+    private BusinessRuleException paidChangeOnDeliverySale(Long saleId) {
+        return new BusinessRuleException("No se puede cambiar manualmente el estado de pago de la venta #" + saleId
+                + ": tiene pedido a domicilio; regístralo como cobro del pedido o abono");
     }
 
     private Customer findCustomerById(Long customerId) {

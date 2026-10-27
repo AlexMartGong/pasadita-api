@@ -49,6 +49,7 @@ public class CustomerMapper {
                 .customDiscount(customer.getCustom_discount())
                 .notes(customer.getNotes())
                 .active(customer.isActive())
+                .creditLimit(customer.getCreditLimit())
                 .build();
     }
 }

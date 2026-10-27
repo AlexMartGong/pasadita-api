@@ -22,5 +22,6 @@ public class DeliveryOrderResponseDto {
     private String contactPhone;
     private boolean paid;
     private BigDecimal total;
+    private BigDecimal balance;
     private DeliveryStatus status;
 }

@@ -35,4 +35,8 @@ public class Customer {
     private String city;
     private String notes;
     private boolean active;
+
+    @Column(name = "credit_limit", nullable = false, precision = 10, scale = 2)
+    @Builder.Default
+    private BigDecimal creditLimit = BigDecimal.ZERO;
 }

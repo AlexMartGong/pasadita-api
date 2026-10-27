@@ -23,4 +23,5 @@ public class CustomerResponseDto {
     private BigDecimal customDiscount;
     private String notes;
     private boolean active;
+    private BigDecimal creditLimit;
 }

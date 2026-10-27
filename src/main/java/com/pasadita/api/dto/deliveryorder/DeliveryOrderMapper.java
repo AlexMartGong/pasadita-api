@@ -7,6 +7,8 @@ import com.pasadita.api.enums.delivery.DeliveryStatus;
 import com.pasadita.api.utils.DateTimeUtils;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+
 
 @Component
 public class DeliveryOrderMapper {
@@ -42,7 +44,12 @@ public class DeliveryOrderMapper {
         deliveryOrder.setDeliveryCost(dto.getDeliveryCost());
     }
 
-    public DeliveryOrderResponseDto toResponseDto(DeliveryOrder deliveryOrder) {
+    // paidAmount = payments (abonos) on the order's note; only a PENDIENTE order carries a balance
+    public DeliveryOrderResponseDto toResponseDto(DeliveryOrder deliveryOrder, BigDecimal paidAmount) {
+        BigDecimal total = deliveryOrder.getSale() != null ? deliveryOrder.getSale().getTotal() : null;
+        BigDecimal balance = deliveryOrder.getStatus() == DeliveryStatus.PENDIENTE && total != null
+                ? total.subtract(paidAmount)
+                : BigDecimal.ZERO;
         return DeliveryOrderResponseDto.builder()
                 .id(deliveryOrder.getId())
                 .saleId(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getId() : null)
@@ -51,7 +58,8 @@ public class DeliveryOrderMapper {
                 .deliveryAddress(deliveryOrder.getDeliveryAddress())
                 .contactPhone(deliveryOrder.getContactPhone())
                 .paid(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getPaid() : false)
-                .total(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getTotal() : null)
+                .total(total)
+                .balance(balance)
                 .status(deliveryOrder.getStatus())
                 .build();
     }

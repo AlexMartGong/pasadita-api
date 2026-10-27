@@ -12,7 +12,7 @@ import java.util.Optional;
 public interface DeliveryOrderService {
     DeliveryOrderSummaryDto findAll();
 
-    Optional<DeliveryOrderResponseDto> save(DeliveryOrderCreateDto deliveryOrderCreateDto);
+    Optional<DeliveryOrderResponseDto> save(DeliveryOrderCreateDto deliveryOrderCreateDto, boolean requestedByAdmin);
 
     Optional<DeliveryOrderResponseDto> update(Long id, DeliveryOrderUpdateDto deliveryOrderUpdateDto);
 
