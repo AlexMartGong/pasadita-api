@@ -10,6 +10,7 @@ import com.pasadita.api.dto.sale.SaleUpdateDto;
 import com.pasadita.api.dto.saledetail.SaleDetailResponseDto;
 import com.pasadita.api.dto.ticket.TicketResponseDto;
 import com.pasadita.api.entities.*;
+import com.pasadita.api.enums.account.PaymentStatus;
 import com.pasadita.api.repositories.CustomerRepository;
 import com.pasadita.api.repositories.DeliveryOrderRepository;
 import com.pasadita.api.repositories.EmployeeRepository;
@@ -142,7 +143,8 @@ public class SaleServiceImpl implements SaleService {
         Sale existingSale = saleRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Sale not found with id: " + id));
 
-        if (salePaymentRepository.existsBySaleId(id)) {
+        // R15: cancelled payments don't count
+        if (salePaymentRepository.existsBySaleIdAndStatus(id, PaymentStatus.APLICADO)) {
             throw new BusinessRuleException("No se puede editar la venta #" + id + ": tiene abonos registrados");
         }
         if (!Objects.equals(existingSale.getPaid(), saleUpdateDto.getPaid()) && deliveryOrderRepository.existsBySaleId(id)) {

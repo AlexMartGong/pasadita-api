@@ -1,5 +1,6 @@
 package com.pasadita.api.entities;
 
+import com.pasadita.api.enums.account.PaymentStatus;
 import com.pasadita.api.utils.DateTimeUtils;
 import jakarta.persistence.*;
 import lombok.*;
@@ -44,4 +45,11 @@ public class SalePayment {
 
     @Column(name = "client_request_id", length = 36)
     private String clientRequestId;
+
+    // A cancelled payment keeps its row but counts for nothing (debt, balances, preconditions); only the
+    // clientRequestId replay still sees it
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private PaymentStatus status = PaymentStatus.APLICADO;
 }

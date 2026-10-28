@@ -10,6 +10,7 @@ import com.pasadita.api.dto.account.SalePaidAmount;
 import com.pasadita.api.entities.DeliveryOrder;
 import com.pasadita.api.entities.Employee;
 import com.pasadita.api.entities.Sale;
+import com.pasadita.api.enums.account.PaymentStatus;
 import com.pasadita.api.enums.delivery.DeliveryStatus;
 import com.pasadita.api.repositories.CustomerRepository;
 import com.pasadita.api.repositories.DeliveryOrderRepository;
@@ -120,8 +121,8 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
         Sale sale = deliveryOrder.getSale();
         customerRepository.findByIdForUpdate(sale.getCustomer().getId());
 
-        // R14: an order whose note already has payments can't be cancelled (phase 1)
-        if (salePaymentRepository.existsBySaleId(sale.getId())) {
+        // R14: an order whose note has active payments can't be cancelled (cancelled payments don't count)
+        if (salePaymentRepository.existsBySaleIdAndStatus(sale.getId(), PaymentStatus.APLICADO)) {
             throw new BusinessRuleException("No se puede cancelar el pedido #" + id + ": su nota tiene abonos registrados");
         }
 
@@ -138,16 +139,17 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
         return deliveryOrderMapper.toResponseDto(deliveryOrder, paidAmountOf(deliveryOrder, paidBySaleId));
     }
 
-    // One aggregate query for every listed order: the PENDIENTE ones show their remaining balance
+    // One aggregate query of active payments for every listed order, whatever its status: the PENDIENTE ones show their
+    // remaining balance, and any order with payments (ACTIVO ones settled by payments included) flags hasPayments
     private Map<Long, BigDecimal> findPaidAmountsBySaleId(List<DeliveryOrder> deliveryOrders) {
-        List<Long> pendingSaleIds = deliveryOrders.stream()
-                .filter(order -> order.getStatus() == DeliveryStatus.PENDIENTE && order.getSale() != null)
+        List<Long> saleIds = deliveryOrders.stream()
+                .filter(order -> order.getSale() != null)
                 .map(order -> order.getSale().getId())
                 .collect(Collectors.toList());
-        if (pendingSaleIds.isEmpty()) {
+        if (saleIds.isEmpty()) {
             return Map.of();
         }
-        return salePaymentRepository.sumAmountsBySaleIds(pendingSaleIds).stream()
+        return salePaymentRepository.sumActiveAmountsBySaleIds(saleIds).stream()
                 .collect(Collectors.toMap(SalePaidAmount::saleId, SalePaidAmount::paidAmount));
     }
 

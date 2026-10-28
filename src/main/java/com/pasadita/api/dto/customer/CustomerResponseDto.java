@@ -24,4 +24,6 @@ public class CustomerResponseDto {
     private String notes;
     private boolean active;
     private BigDecimal creditLimit;
+    // Público en general (app.sales.walk-in-customer-id)
+    private boolean walkIn;
 }

@@ -44,7 +44,8 @@ public class DeliveryOrderMapper {
         deliveryOrder.setDeliveryCost(dto.getDeliveryCost());
     }
 
-    // paidAmount = payments (abonos) on the order's note; only a PENDIENTE order carries a balance
+    // paidAmount = active payments (abonos) on the order's note; only a PENDIENTE order carries a balance. Active
+    // payments are never below 0.01, so a positive sum means the note has some
     public DeliveryOrderResponseDto toResponseDto(DeliveryOrder deliveryOrder, BigDecimal paidAmount) {
         BigDecimal total = deliveryOrder.getSale() != null ? deliveryOrder.getSale().getTotal() : null;
         BigDecimal balance = deliveryOrder.getStatus() == DeliveryStatus.PENDIENTE && total != null
@@ -60,6 +61,7 @@ public class DeliveryOrderMapper {
                 .paid(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getPaid() : false)
                 .total(total)
                 .balance(balance)
+                .hasPayments(paidAmount.signum() > 0)
                 .status(deliveryOrder.getStatus())
                 .build();
     }

@@ -16,9 +16,6 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PaymentCreateDto {
-    @NotNull(message = "The employee ID is required")
-    private Long employeeId;
-
     @NotNull(message = "The amount is required")
     @DecimalMin(value = "0.01", message = "The amount must be at least 0.01")
     @Digits(integer = 10, fraction = 2, message = "The amount must have up to 10 digits and 2 decimal places")

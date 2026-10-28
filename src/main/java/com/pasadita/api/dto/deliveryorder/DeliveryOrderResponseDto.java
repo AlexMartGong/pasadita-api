@@ -23,5 +23,7 @@ public class DeliveryOrderResponseDto {
     private boolean paid;
     private BigDecimal total;
     private BigDecimal balance;
+    // The note has active payments (abonos): the order can't be collected or cancelled, only its payments viewed
+    private boolean hasPayments;
     private DeliveryStatus status;
 }

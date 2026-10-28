@@ -7,6 +7,7 @@ import com.pasadita.api.dto.sale.SaleChangeStatusDto;
 import com.pasadita.api.dto.sale.SaleMapper;
 import com.pasadita.api.dto.sale.SaleUpdateDto;
 import com.pasadita.api.dto.saledetail.SaleDetailCreateDto;
+import com.pasadita.api.enums.account.PaymentStatus;
 import com.pasadita.api.entities.Customer;
 import com.pasadita.api.entities.Employee;
 import com.pasadita.api.entities.PaymentMethod;
@@ -193,7 +194,7 @@ class SaleServiceImplTest {
     @Test
     void updateIsRejectedWhenTheSaleHasPayments() {
         when(saleRepository.findById(7L)).thenReturn(Optional.of(Sale.builder().id(7L).paid(false).build()));
-        when(salePaymentRepository.existsBySaleId(7L)).thenReturn(true);
+        when(salePaymentRepository.existsBySaleIdAndStatus(7L, PaymentStatus.APLICADO)).thenReturn(true);
 
         assertThatThrownBy(() -> service.update(7L, SaleUpdateDto.builder().paid(false).build()))
                 .isInstanceOf(BusinessRuleException.class)
@@ -202,10 +203,11 @@ class SaleServiceImplTest {
         verify(saleDetailRepository, never()).deleteBySaleId(any());
     }
 
+    // R15 only counts active payments: a sale whose payments were all cancelled gets past it to the next rule
     @Test
     void updateCannotChangePaidOnSaleWithDeliveryOrder() {
         when(saleRepository.findById(7L)).thenReturn(Optional.of(Sale.builder().id(7L).paid(false).build()));
-        when(salePaymentRepository.existsBySaleId(7L)).thenReturn(false);
+        when(salePaymentRepository.existsBySaleIdAndStatus(7L, PaymentStatus.APLICADO)).thenReturn(false);
         when(deliveryOrderRepository.existsBySaleId(7L)).thenReturn(true);
 
         assertThatThrownBy(() -> service.update(7L, SaleUpdateDto.builder().paid(true).build()))

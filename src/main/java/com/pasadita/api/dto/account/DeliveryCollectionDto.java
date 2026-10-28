@@ -16,9 +16,6 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class DeliveryCollectionDto {
-    @NotNull(message = "The employee ID is required")
-    private Long employeeId;
-
     @NotNull(message = "The amount received is required")
     @DecimalMin(value = "0.00", message = "The amount received must be non-negative")
     @Digits(integer = 10, fraction = 2, message = "The amount received must have up to 10 digits and 2 decimal places")

@@ -9,7 +9,6 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Component
 public class CustomerAccountMapper {
@@ -42,7 +41,7 @@ public class CustomerAccountMapper {
     }
 
     public PendingNoteDto toPendingNoteDto(DeliveryOrder deliveryOrder, BigDecimal paidAmount, BigDecimal balance,
-                                           List<SalePayment> payments) {
+                                           List<PaymentDetailDto> payments) {
         return PendingNoteDto.builder()
                 .saleId(deliveryOrder.getSale().getId())
                 .orderId(deliveryOrder.getId())
@@ -50,13 +49,11 @@ public class CustomerAccountMapper {
                 .total(deliveryOrder.getSale().getTotal())
                 .paidAmount(paidAmount)
                 .balance(balance)
-                .payments(payments.stream()
-                        .map(this::toPaymentDetailDto)
-                        .collect(Collectors.toList()))
+                .payments(payments)
                 .build();
     }
 
-    public PaymentDetailDto toPaymentDetailDto(SalePayment payment) {
+    public PaymentDetailDto toPaymentDetailDto(SalePayment payment, boolean modified, boolean editable) {
         return PaymentDetailDto.builder()
                 .paymentId(payment.getId())
                 .datetime(DateTimeUtils.toMexicoTime(payment.getDatetime()))
@@ -66,6 +63,31 @@ public class CustomerAccountMapper {
                 .employeeId(payment.getEmployee() != null ? payment.getEmployee().getId() : null)
                 .employeeName(payment.getEmployee() != null ? payment.getEmployee().getFullName() : null)
                 .notes(payment.getNotes())
+                .status(payment.getStatus())
+                .modified(modified)
+                .editable(editable)
+                .build();
+    }
+
+    public PaymentHistoryDto toPaymentHistoryDto(PaymentHistoryRow row) {
+        return PaymentHistoryDto.builder()
+                .historyId(row.historyId())
+                .changedAt(DateTimeUtils.toMexicoTime(row.changedAt()))
+                .action(row.action())
+                .previousAmount(row.previousAmount())
+                .newAmount(row.newAmount())
+                .previousPaymentMethodId(row.previousPaymentMethodId())
+                .previousPaymentMethodName(row.previousPaymentMethodName())
+                .newPaymentMethodId(row.newPaymentMethodId())
+                .newPaymentMethodName(row.newPaymentMethodName())
+                .reason(row.reason())
+                .employeeId(row.employeeId())
+                .employeeName(row.employeeName())
+                .paymentId(row.paymentId())
+                .saleId(row.saleId())
+                .orderId(row.orderId())
+                .customerId(row.customerId())
+                .customerName(row.customerName())
                 .build();
     }
 

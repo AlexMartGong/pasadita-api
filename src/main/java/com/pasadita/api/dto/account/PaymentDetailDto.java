@@ -1,5 +1,6 @@
 package com.pasadita.api.dto.account;
 
+import com.pasadita.api.enums.account.PaymentStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,4 +22,9 @@ public class PaymentDetailDto {
     private Long employeeId;
     private String employeeName;
     private String notes;
+    private PaymentStatus status;
+    // Has a MODIFICADO history row
+    private boolean modified;
+    // Whether the authenticated user may modify it now (active, own payment of the day or ADMIN, no stamped invoice)
+    private boolean editable;
 }

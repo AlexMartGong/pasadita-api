@@ -1,11 +1,18 @@
 package com.pasadita.api.dto.customer;
 
+import com.pasadita.api.config.SalesProperties;
 import com.pasadita.api.entities.Customer;
 import com.pasadita.api.entities.CustomerType;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.Objects;
+
 @Component
+@RequiredArgsConstructor
 public class CustomerMapper {
+
+    private final SalesProperties salesProperties;
 
     public Customer toEntity(CustomerCreateDto dto, CustomerType customerType) {
         return Customer.builder()
@@ -50,6 +57,7 @@ public class CustomerMapper {
                 .notes(customer.getNotes())
                 .active(customer.isActive())
                 .creditLimit(customer.getCreditLimit())
+                .walkIn(Objects.equals(customer.getId(), salesProperties.walkInCustomerId()))
                 .build();
     }
 }
