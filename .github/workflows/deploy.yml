@@ -1,4 +1,4 @@
-name: Deploy to DigitalOcean
+name: Deploy to Netcup VPS
 
 on:
   push:

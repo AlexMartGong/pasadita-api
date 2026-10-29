@@ -97,7 +97,7 @@ docker compose -f docker-compose.local.yml down -v
 - **Documentation**: Spring REST Docs with AsciiDoc
 - **Build Tool**: Maven with wrapper
 - **Code Quality**: Qodana JVM Community linter
-- **CI/CD**: GitHub Actions (deploy to DigitalOcean on main push, Qodana on PRs)
+- **CI/CD**: GitHub Actions (deploy to a Netcup VPS over SSH + Docker Compose on main push, Qodana on PRs)
 
 ### Layered Architecture
 
