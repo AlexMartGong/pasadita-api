@@ -1,21 +1,28 @@
 package com.pasadita.api.services.sale;
 
+import com.pasadita.api.dto.deliveryorder.DeliveryOrderEmbeddedDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderMapper;
 import com.pasadita.api.dto.sale.SaleCreateDto;
+import com.pasadita.api.dto.sale.SaleChangeStatusDto;
 import com.pasadita.api.dto.sale.SaleMapper;
+import com.pasadita.api.dto.sale.SaleUpdateDto;
 import com.pasadita.api.dto.saledetail.SaleDetailCreateDto;
+import com.pasadita.api.enums.account.PaymentStatus;
 import com.pasadita.api.entities.Customer;
 import com.pasadita.api.entities.Employee;
 import com.pasadita.api.entities.PaymentMethod;
 import com.pasadita.api.entities.Product;
 import com.pasadita.api.entities.Sale;
+import com.pasadita.api.exceptions.BusinessRuleException;
 import com.pasadita.api.repositories.CustomerRepository;
 import com.pasadita.api.repositories.DeliveryOrderRepository;
 import com.pasadita.api.repositories.EmployeeRepository;
 import com.pasadita.api.repositories.PaymentMethodRepository;
 import com.pasadita.api.repositories.ProductRepository;
 import com.pasadita.api.repositories.SaleDetailRepository;
+import com.pasadita.api.repositories.SalePaymentRepository;
 import com.pasadita.api.repositories.SaleRepository;
+import com.pasadita.api.services.account.CustomerAccountService;
 import com.pasadita.api.services.saledetail.SaleDetailService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +36,11 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -45,6 +56,8 @@ class SaleServiceImplTest {
     @Mock private DeliveryOrderMapper deliveryOrderMapper;
     @Mock private SaleDetailService saleDetailService;
     @Mock private SaleDetailRepository saleDetailRepository;
+    @Mock private SalePaymentRepository salePaymentRepository;
+    @Mock private CustomerAccountService customerAccountService;
 
     private SaleServiceImpl service;
 
@@ -52,7 +65,8 @@ class SaleServiceImplTest {
     void setUp() {
         service = new SaleServiceImpl(saleRepository, employeeRepository, customerRepository,
                 paymentMethodRepository, productRepository, deliveryOrderRepository,
-                saleMapper, deliveryOrderMapper, saleDetailService, saleDetailRepository);
+                saleMapper, deliveryOrderMapper, saleDetailService, saleDetailRepository,
+                salePaymentRepository, customerAccountService);
     }
 
     private SaleCreateDto saveSaleWithSingleDetail(String unitPrice, BigDecimal requestedUnitDiscount, String quantity) {
@@ -87,7 +101,7 @@ class SaleServiceImplTest {
                 .saleDetails(new ArrayList<>(List.of(detail)))
                 .build();
 
-        service.save(dto);
+        service.save(dto, false);
         return dto;
     }
 
@@ -175,5 +189,61 @@ class SaleServiceImplTest {
         assertThat(detail.getDiscount()).isEqualByComparingTo("0.00");
         assertThat(detail.getSubtotal()).isEqualByComparingTo("75.00");
         assertThat(detail.getTotal()).isEqualByComparingTo("75.00");
+    }
+
+    @Test
+    void updateIsRejectedWhenTheSaleHasPayments() {
+        when(saleRepository.findById(7L)).thenReturn(Optional.of(Sale.builder().id(7L).paid(false).build()));
+        when(salePaymentRepository.existsBySaleIdAndStatus(7L, PaymentStatus.APLICADO)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.update(7L, SaleUpdateDto.builder().paid(false).build()))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("abonos");
+        verify(saleRepository, never()).save(any());
+        verify(saleDetailRepository, never()).deleteBySaleId(any());
+    }
+
+    // R15 only counts active payments: a sale whose payments were all cancelled gets past it to the next rule
+    @Test
+    void updateCannotChangePaidOnSaleWithDeliveryOrder() {
+        when(saleRepository.findById(7L)).thenReturn(Optional.of(Sale.builder().id(7L).paid(false).build()));
+        when(salePaymentRepository.existsBySaleIdAndStatus(7L, PaymentStatus.APLICADO)).thenReturn(false);
+        when(deliveryOrderRepository.existsBySaleId(7L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.update(7L, SaleUpdateDto.builder().paid(true).build()))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("pedido");
+        verify(saleRepository, never()).save(any());
+    }
+
+    @Test
+    void changeStatusIsRejectedOnSaleWithDeliveryOrder() {
+        when(saleRepository.findById(7L)).thenReturn(Optional.of(Sale.builder().id(7L).paid(true).build()));
+        when(deliveryOrderRepository.existsBySaleId(7L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.changeStatus(7L, new SaleChangeStatusDto(false)))
+                .isInstanceOf(BusinessRuleException.class);
+        verify(saleRepository, never()).save(any());
+    }
+
+    @Test
+    void saleWithDeliveryOrderIsRejectedWhenCustomerCreditIsExhausted() {
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(Employee.builder().id(1L).build()));
+        when(customerRepository.findById(2L)).thenReturn(Optional.of(Customer.builder().id(2L).build()));
+        doThrow(new BusinessRuleException("Se requiere autorización del administrador"))
+                .when(customerAccountService).assertCreditAllowsNewOrder(2L, false);
+
+        SaleCreateDto dto = SaleCreateDto.builder()
+                .employeeId(1L)
+                .customerId(2L)
+                .paymentMethodId(1L)
+                .saleDetails(new ArrayList<>())
+                .deliveryOrder(DeliveryOrderEmbeddedDto.builder().deliveryEmployeeId(1L).build())
+                .build();
+
+        assertThatThrownBy(() -> service.save(dto, false))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("administrador");
+        verify(saleRepository, never()).save(any());
     }
 }

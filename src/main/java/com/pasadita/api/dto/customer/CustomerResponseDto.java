@@ -23,4 +23,7 @@ public class CustomerResponseDto {
     private BigDecimal customDiscount;
     private String notes;
     private boolean active;
+    private BigDecimal creditLimit;
+    // Público en general (app.sales.walk-in-customer-id)
+    private boolean walkIn;
 }

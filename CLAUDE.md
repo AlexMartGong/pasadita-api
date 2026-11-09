@@ -129,7 +129,8 @@ The application follows a standard layered architecture:
 ### Data Model Patterns
 
 - Entities use Lombok annotations (`@Data`, `@Builder`, `@NoArgsConstructor`, `@AllArgsConstructor`)
-- Enums for categorization (`Category`, `UnitMeasure`, `Position`, `DeliveryStatus`, `InvoiceStatus`)
+- Enums for categorization (`Category`, `UnitMeasure`, `Position`, `DeliveryStatus`, `InvoiceStatus`, `PaymentStatus`,
+  `PaymentHistoryAction`)
 - Custom validation annotations (`@ExistsEmployee`)
 - Separate DTOs for Create, Update, Response, and specific operations (ChangePassword, ChangeStatus)
 - Dedicated mapper classes for entity-DTO conversion
@@ -138,6 +139,11 @@ The application follows a standard layered architecture:
   `INSERT` for the `admin` employee (`ROLE_ADMIN`, password `123456`, verified BCrypt hash) — local convenience only;
   change the password in production. Never hand-write or copy BCrypt hashes from tutorials: generate them with
   `BCryptPasswordEncoder` and verify with `matches()` before inserting.
+- **Production migrations**: `scriptLP.sql` only runs on fresh volumes. Schema changes for an existing database go in
+  `scripts/migrations/` (plain SQL, applied by hand — no Flyway yet), and must be applied in production **before**
+  deploying the code that needs them (prod validates the schema at startup). Current:
+  `2026-10-abonos.sql` (phases 1 and 1.1: `credit_limit`, `sale_payments` with `status`, `sale_payment_history`;
+  + read-only `2026-10-abonos-conciliacion.sql`)
 
 ## Development Guidelines
 
@@ -145,16 +151,16 @@ The application follows a standard layered architecture:
 
 ```
 com.pasadita.api/
-├── config/           # WebSocket, CORS, scheduling (SchedulingConfig: @EnableScheduling + Clock), and @ConfigurationProperties (e.g., FacturacionProperties, R2Properties); S3Config exposes the S3Client bean
+├── config/           # WebSocket, CORS, scheduling (SchedulingConfig: @EnableScheduling + Clock), and @ConfigurationProperties (e.g., FacturacionProperties, R2Properties, SalesProperties); S3Config exposes the S3Client bean
 ├── controllers/      # REST endpoints by domain
-├── dto/              # DTOs organized by domain (customer, employee, product, sale, saledetail, deliveryorder, dashboard, ticket, fiscal, invoice)
+├── dto/              # DTOs organized by domain (customer, employee, product, sale, saledetail, deliveryorder, dashboard, ticket, fiscal, invoice, account)
 ├── entities/         # JPA entities
-├── enums/            # Enums organized by category (product, user, delivery, invoice)
+├── enums/            # Enums organized by category (product, user, delivery, invoice, account)
 ├── exceptions/       # Custom exceptions
 ├── repositories/     # Spring Data JPA repositories
 ├── security/         # Security configuration and JWT filters
-├── services/         # Business logic (interface + implementation pattern by domain — includes fiscal, invoice, storage)
-├── utils/            # Common utilities (DateTimeUtils, ValidationUtils)
+├── services/         # Business logic (interface + implementation pattern by domain — includes fiscal, invoice, storage, account)
+├── utils/            # Common utilities (DateTimeUtils, ValidationUtils, SecurityUtils.isAdmin(Authentication))
 └── validation/       # Custom validation annotations and validators
 ```
 
@@ -189,7 +195,8 @@ com.pasadita.api/
 - **Production** (`application-prod.properties`): Uses environment variables (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
   `JWT_SECRET`, `JWT_EXPIRATION`, `CORS_ALLOWED_ORIGINS`, `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`,
   `FACTURAPI_KEY`, `R2_ACCESS_KEY`,
-  `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`), Hibernate `ddl-auto=validate`, HikariCP pool (max 10),
+  `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`, optional `WALK_IN_CUSTOMER_ID`), Hibernate
+  `ddl-auto=validate`, HikariCP pool (max 10),
   error-detail hardening via `spring.web.error.include-*=never` (Boot 4 key; the old `server.error.*` is ignored)
 - **Facturación (CFDI)**: `facturacion.emisor.*` (rfc, razon-social, regimen-fiscal, codigo-postal) and
   `facturacion.csd.*` (cer-path, key-path, password) are bound to `FacturacionProperties` (under `config/`).
@@ -260,6 +267,7 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
 | `BusinessRuleException`     | 400 BAD_REQUEST    | Domain rule violation (e.g., cancel already-delivered order)                   |
 | `EmployeeInactiveException` | 401 (auth failure) | Extends `AuthenticationException`; thrown during login if employee is inactive |
 | `ConstraintViolationException` (`jakarta.validation`) | 400 BAD_REQUEST | Entity Bean Validation re-run by Hibernate at persist time; body is `{property: message}` like `ValidationUtils` |
+| `AccessDeniedException` (Spring Security) | 403 FORBIDDEN | `@PreAuthorize` denial (`AuthorizationDeniedException`), thrown inside the controller call — without this handler the catch-all made it a 500 |
 | `Exception` (catch-all)     | 500                | Logged via SLF4J, returns generic message                                      |
 
 - Always throw `EntityNotFoundException` or `BusinessRuleException` from services — never return null or handle HTTP
@@ -283,15 +291,32 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
 - Pure Mockito unit tests (no Spring context) for service rules: `InvoiceServiceImplTest` (stamping happy path,
   single Facturapi request with inline customer/products regardless of item count, RESICO ISR retention, SAT catalog validation, `PENDIENTE`/`ERROR` row reuse vs. finalized rejection, Facturapi
   rejection message transparency + `markAsError`, cancel/email flows), `SaleServiceImplTest`
-  (discount rule: range bounds, cap, per-quantity accumulation, derived sale totals), `PrinterWebSocketHandlerTest`
+  (discount rule: range bounds, cap, per-quantity accumulation, derived sale totals; R15 `update` with active payments,
+  R8 `paid` changes on sales with an order, R12 credit check on sale + order), `CustomerAccountServiceImplTest` (abonos:
+  business example A/B/C, shortfall/zero/exact/surplus collections, oldest-first settlement + change, walk-in R9,
+  preconditions, `clientRequestId` replay, second collection of a surplus order rejected and no-debt surplus retry
+  replayed — both with payment lookups backed by the saved rows, over-limit flag, R12, sale payment cap/settle,
+  scale-insensitive amounts; phase 1.1, mostly over an in-memory account whose lookups read the saved rows and skip
+  cancelled ones: modify up settles / down reopens + over-limit, M2 cap and 0, M6 owner/other employee/other Mexico
+  day, M3, M5 no-op, X3 on modify/cancel/short collection, walk-in lowering vs method change vs cancel, idempotent
+  cancel, cancelling a surplus note's own row reopens it and a second collection stays rejected, retry of a cancelled
+  request, cancelled rows out of debt and the note cap, `CREADO`/`MODIFICADO`/`CANCELADO` rows, employee from the
+  `PaymentActor`, `editable`/`modified` in the note list and the account statement), `PaymentEditPolicyTest` (the
+  `editable` matrix with a fixed `Clock`), `PaymentHistoryServiceImplTest` (Mexico dates → UTC range with exclusive
+  end, `from > to`, unknown payment),
+  `DeliveryOrderServiceImplTest` (manual status only to `CANCELADO`, R14 cancel with active payments / only cancelled
+  ones, `hasPayments` + PENDIENTE-only balance from one aggregate, R1 unpaid sale, credit check with the caller role),
+  `SalePaymentControllerTest` / `CustomerAccountControllerTest` (the `PaymentActor` comes from the `Authentication`),
+  `PrinterWebSocketHandlerTest`
   (late close of a replaced session keeps the new one, closing the current session removes it, replacement closes the
   previous session, closed-session sends fail and clean up, heartbeat ping/eviction with a mocked `Clock`),
   `SaleControllerTest` (open-drawer `503` when the station is offline, `400` without `stationId`, `200` when delivered),
   `JwtAuthenticationFilterTest` (login body binding with Boot's `JsonMapper` built from the real
   `application.properties` via `ApplicationContextRunner` — fails if `use-jackson2-defaults` is dropped; malformed
   body stays a `401`; `FactorGrantedAuthority` never reaches the JWT or the login body)
-- Pure Bean Validation tests (no Spring context): `SaleDetailValidationTest` (entity `quantity` bounds as Hibernate
-  checks them at persist time) and `GlobalExceptionHandlerTest` (`ConstraintViolationException` → `400`)
+- Validation and error-mapping tests (no Spring Boot context): `SaleDetailValidationTest` (entity `quantity` bounds as Hibernate
+  checks them at persist time) and `GlobalExceptionHandlerTest` (`ConstraintViolationException` → `400`; an
+  `AuthorizationDeniedException` → `403` through a standalone `MockMvc`, so the advice's handler resolution is exercised)
 - `PasaditaApiApplicationTests.contextLoads` needs the MySQL from `application.properties` (localhost:3306); the
   Mockito suites run without it
 - Spring Security Test support available
@@ -305,6 +330,11 @@ Current domains include:
 
 - **Employee**: User management with positions (ADMIN, CAJERO, PEDIDOS)
 - **Customer**: Customer management with customer types
+    - `CustomerResponseDto.walkIn` = the id is `app.sales.walk-in-customer-id` ("Público en general"), so the
+      frontend never hardcodes it
+    - `creditLimit` (`credit_limit decimal(10,2) not null default 0`) — set only by an ADMIN through
+      `PATCH /api/customers/{id}/credit-limit`; `0` = no credit. `CustomerMapper.updateEntity` never touches it;
+      exposed read-only in `CustomerResponseDto`
 - **CustomerType**: Customer categorization
 - **Product**: Inventory with categories and unit measures
     - **Best-seller ordering (current month)**: `GET /api/products/all` → `ProductServiceImpl.findAll()` →
@@ -345,6 +375,8 @@ Current domains include:
           totals — the client-sent values are ignored (service is the source of truth, same as
           `subtotal`/`unitPrice`); `total = subtotal − discountAmount` holds by construction
         - Applies only to `save`; `update()` re-inserts details without recomputing amounts (known gap)
+    - `update()` is rejected when the sale has active payments (R15) and when it would change `paid` on a sale with a delivery
+      order; `PUT /api/sales/change-status/{id}` is rejected for sales with a delivery order (R8, see Customer account)
 - **SaleDetail**: Line items for sales
     - ManyToOne relationships with Sale and Product
     - Tracks quantity, unit price, subtotal, discount, and total (all server-computed under the discount rule above)
@@ -358,7 +390,19 @@ Current domains include:
 - **DeliveryOrder**: Delivery management with status tracking
     - OneToOne relationship with Sale
     - ManyToOne with Employee (delivery driver)
-    - Tracks status, request date, delivery address, contact phone, and delivery cost
+    - Tracks status, request date, delivery address, contact phone, and delivery cost (`delivery_cost` is unused —
+      never reuse it for payments)
+    - Status meaning: **ACTIVO** = delivered and fully paid, **PENDIENTE** = delivered with a balance, **CANCELADO** =
+      returned/cancelled. Created on both paths (`POST /api/sales/save` with embedded `deliveryOrder`, and
+      `POST /api/delivery-orders/save` for an existing sale, which must be paid — R1) always as `ACTIVO` with
+      `sales.paid = 1`; both paths run the R12 credit check (see Customer account)
+    - `PUT /api/delivery-orders/change-status/{id}` only accepts `CANCELADO` (R8) and rejects orders whose note has
+      active payments (R14); cancelling still sets `sales.paid = 0`
+    - `DeliveryOrderResponseDto.balance` = total − active payments for `PENDIENTE` orders (0 otherwise) and
+      `hasPayments` = the note has active payments (whatever the order status, e.g. an `ACTIVO` order settled by
+      payments), both from
+      one aggregate query over every listed order. The frontend uses `hasPayments` to hide "Registrar cobro" and
+      "Cancelar pedido" and show "Ver abonos"
 - **CustomerFiscalData**: Tax data for invoicing (separate from Customer to allow multiple RFCs / shared by walk-ins)
     - Fields: `rfc` (unique, indexed), `razonSocial`, `regimenFiscal`, `codigoPostalFiscal`, `usoCfdi`,
       `emailFacturacion`, plus optional phone/address
@@ -421,6 +465,129 @@ Current domains include:
     - Endpoint: `GET /api/dashboard?startDate=&endDate=` (defaults to current month in Mexico time, converted to UTC for
       query)
     - Access restricted to `ROLE_ADMIN`
+
+### Customer Account (abonos y crédito)
+
+Partial payments on delivery-order notes and per-customer credit. Terms: **nota** = sale, **pedido** = delivery order
+(1:1), **abono** = a `sale_payments` row. Counter sales are untouched. `paid = 1` is the source of truth for a paid
+note, never the rows: a paid note has either no rows (all history, and orders paid exactly at delivery) or rows that sum
+to its total (settled by payments, or collected with a surplus).
+
+- **Schema**: `sale_payments` (`sale_id`, `employee_id`, `payment_method_id`, `amount decimal(10,2)`, `datetime` UTC,
+  `notes varchar(200)`, `client_request_id varchar(36)` — **not unique**: one request can create several rows, e.g. a
+  surplus spread over several notes — and `status enum('APLICADO','CANCELADO') default 'APLICADO'`) → entity
+  `SalePayment` (all `@ManyToOne` LAZY). Never store payments in `sales.amount_tendered` (counter change) or
+  `deliveryorders.delivery_cost` (R16). `sale_payment_history` (`payment_id`, `action enum('CREADO','MODIFICADO',
+  'CANCELADO')`, `previous_*`/`new_*` amount and payment method, `reason varchar(200)`, `changed_by` employee,
+  `changed_at` UTC) → entity `SalePaymentHistory` (`@Immutable`, getters only); its repository extends
+  `Repository`, not `CrudRepository`, and declares only `save` and reads, so the history can't be updated or deleted
+  from code (H2). Enums `PaymentStatus` / `PaymentHistoryAction` in `enums/account/`
+- **Service**: `CustomerAccountService` / `CustomerAccountServiceImpl` (`services/account/`) for everything that moves
+  money or reads the account; `PaymentEditPolicy` (`@Component`, injected `Clock`) for who may modify a payment;
+  read-only `PaymentHistoryService` / `PaymentHistoryServiceImpl` for the history. DTOs + `CustomerAccountMapper` in
+  `dto/account/`. Walk-in customer ("Público en general") id from `app.sales.walk-in-customer-id`
+  (env `WALK_IN_CUSTOMER_ID`, default `1`, which is production's) → `SalesProperties`
+- **Authenticated employee (E1)**: the employee who records a payment and the one written to its history come from the
+  `Authentication` — controllers pass `PaymentActor.from(authentication)` (username + ADMIN flag) and the service
+  resolves it with `EmployeeRepository.findByUsername`. No account DTO has an `employeeId`; the service never reads
+  the `SecurityContext`
+- **Rules**:
+    - Debt (R10) = Σ (total − active payments) of the customer's notes whose order is `PENDIENTE`; `CANCELADO` never
+      counts. Loaded by `loadPendingNotes` with 2 queries (orders with `@EntityGraph("sale")` oldest first by
+      `s.datetime, s.id` + `SalePaymentRepository.sumActiveAmountsBySaleIds`)
+    - Delivery collection (`registerDeliveryCollection`, R3–R5): order must be `ACTIVO` with no active payments.
+      `amountReceived` = what the customer actually left (never blocked by the credit limit). `== total` → 400
+      "nothing to record"; `< total` → order `PENDIENTE`, `paid = 0`, payment row only if `> 0`, walk-in rejected
+      (R9), rejected when the note has a `TIMBRADA` invoice (X3: a PUE invoice can't sit on an unpaid note; the order
+      starts paid, so it can be invoiced before delivery), `overLimit = debt > limit` + `warn` log (R13); `> total` → a
+      row for the note's whole total ("Cobro en entrega del pedido #X", same method/employee/`clientRequestId`) goes in
+      first, so a second collection of that order fails the "no payments" precondition, then the surplus is applied
+      oldest-first and the rest is change. `appliedPayments` lists the note's own row first in both cases. A collected
+      note therefore can't be cancelled (R14) or edited (R15) while its payments are active
+    - Store payment (`registerAccountPayment`, R6): applied oldest-first, rest is change; rejected when debt is 0.
+      ADMIN-only payment to a specific note (`registerSalePayment`) for reconciliation: note must be `PENDIENTE` and
+      amount ≤ its balance
+    - A note whose balance reaches 0 goes back to `paid = 1` + `ACTIVO` in the same transaction (R7). `sales.paid` and
+      `deliveryorders.status` only change together, in `applyPaymentState` (R8) — and in the cancel path
+    - New order (R12, `assertCreditAllowsNewOrder`): debt > 0 **and** debt ≥ limit requires ADMIN (`requestedByAdmin`
+      computed by the controller with `SecurityUtils.isAdmin`, the service never reads the `SecurityContext`); a
+      customer without debt is never blocked, even with limit 0
+- **Active and cancelled payments (A1–A3)**: a payment is never deleted; cancelling sets `status = CANCELADO` and keeps
+  the row. Cancelled payments count for nothing: debt, note balance, `balance`/`hasPayments` of orders,
+  `findCustomersWithDebt` (native subquery filters `status = 'APLICADO'`), the collection precondition, R14, R15 and
+  the note-payment cap. The repository only offers status-filtered lookups for those
+  (`existsBySaleIdAndStatus`, `sumActiveAmountsBySaleIds`, `findBySaleIdInAndStatusOrderByDatetimeAscIdAsc`) — never
+  add an unfiltered one. Exception (A3): the `clientRequestId` lookups see every row, so a retry never re-applies a
+  payment someone cancelled
+- **Modify** (`modifyPayment`, `PUT /api/sale-payments/{paymentId}`):
+    - M1: only `amount` and `paymentMethodId` change (note, customer, employee and `notes` don't; for those, cancel and
+      record a new one)
+    - M2: `0.01 ≤ amount ≤ note total − Σ the note's other active payments`; more money is a new payment
+    - M3: only `APLICADO` payments
+    - M4: `reason` required (≤ 200)
+    - M5: same amount and method → returns the current state, writes nothing (no history row)
+    - M6 (`PaymentEditPolicy`): ADMIN any payment, any day; CAJERO/PEDIDOS only payments they recorded on the same
+      Mexico day (`DateTimeUtils.toMexicoTime`) — otherwise 400 "Solo puedes modificar tus abonos del día. Pide al
+      administrador que lo corrija."
+    - Walk-in (R9): lowering the amount is rejected for every role; changing only the method is allowed
+- **Cancel** (`cancelPayment`, `PUT /api/sale-payments/{paymentId}/cancel`, ADMIN only — C1 via `@PreAuthorize`):
+  `reason` required; cancelling an already cancelled payment returns the current state without writing (C2). Allowed on
+  walk-in notes: the note goes `PENDIENTE` (and shows in debts) until the admin cancels the order, which R14 then allows
+- **Common to modify and cancel**:
+    - X1: same concurrency pattern as collections (`READ_COMMITTED`, scalar `findCustomerIdById` → customer lock →
+      `findWithSaleById` + the order)
+    - Every read (note's active sum, pending notes) happens before the payment is mutated, so Hibernate's auto-flush
+      can't leak the new amount into the sums
+    - X2: the note is recomputed with `applyPaymentState` (balance 0 → `paid = 1` + `ACTIVO`, > 0 → `paid = 0` +
+      `PENDIENTE`; cancelling a surplus note's own row reopens it for its total). The customer debt is adjusted by the
+      note's balance change rather than re-read; `overLimit` + `warn` log as in collections
+    - X3: rejected when the note has a `TIMBRADA` invoice ("Cancela primero la factura")
+    - X4: a `CANCELADO` order can't have active payments (R14), so it's never reached
+    - Response: the same `PaymentResultDto` as collections, `change = 0`; `appliedPayments` = the modified payment, or
+      empty on cancel
+- **History (H1–H3)**: every creation (each row of a spread surplus and the ADMIN note payment included — all go
+  through `createPayment`), modification and cancellation writes a `sale_payment_history` row in the same
+  transaction. `CREADO`: `previous_*` null; `MODIFICADO`: both; `CANCELADO`: `new_*` null. `changed_at` is stored with
+  `DateTimeUtils.nowUtc()` and answered in Mexico time. Reads are JPQL constructor projections (`PaymentHistoryRow`)
+  joining payment, sale, customer, employee, both methods and `LEFT JOIN DeliveryOrder d ON d.sale = s` (`Sale` has no
+  back-reference) — one query, no N+1; the global search has optional `(:x IS NULL OR …)` filters and an explicit
+  `countQuery`
+- **Payment flags**: each `PaymentDetailDto` carries `status`, `modified` (has a `MODIFICADO` row; one
+  `findModifiedPaymentIds` query per list) and `editable` (`PaymentEditPolicy.isEditable` for the caller: `APLICADO`,
+  no `TIMBRADA` invoice — one `InvoiceRepository` query per list — and M6), so the frontend never repeats the rules.
+  The account statement lists only active payments; `GET /api/sales/{saleId}/payments` lists both
+- **Concurrency**: every operation that applies, modifies or cancels payments, or checks credit, first locks the
+  customer row (`CustomerRepository.findByIdForUpdate`, explicit `@Query` + `@Lock(PESSIMISTIC_WRITE)` — `ForUpdate`
+  isn't a Spring Data keyword). Money-moving methods (and the order cancel path) run in
+  `@Transactional(isolation = READ_COMMITTED)`: under MySQL's REPEATABLE READ, reads after the lock would use the
+  snapshot of the transaction's first read and miss payments committed by the previous lock holder. Order is always:
+  scalar customer-id lookup → lock → `clientRequestId` check → load → apply. Verified against MySQL 8: parallel
+  retries with one id create one row, parallel store payments never exceed the debt, 8 parallel surplus collections on
+  different orders (whose first read precedes the lock — the case READ_COMMITTED exists for) settle the debt note
+  exactly once, and 8 parallel surplus collections of the same order with distinct ids apply it once (one `200`, seven
+  `400`)
+- **Idempotency**: a repeated `clientRequestId` returns the current state (rows stored under that id, cancelled ones
+  included, + current balances; change = request amount − Σ those rows) without writing. Known gaps: a $0 collection
+  stores no rows, so its retry is not recognized (it gets a 400 "not ACTIVO"; the state is already right); once a row
+  of the request has been modified, the replayed `change` uses its current amount, so it can differ from the original
+  answer. Corner left open: a note whose total is $0 (only if the discount rule zeroes every line) gets no row of its
+  own on a surplus collection (0.00 rows are never written), so a second collection of that order with a new id would
+  apply the surplus again
+- **Endpoints**:
+    - `CustomerAccountController` (`@RequestMapping("/api")`): `POST /api/delivery-orders/{orderId}/collection`,
+      `POST /api/customers/{customerId}/payments`, `GET /api/customers/{customerId}/account` and
+      `GET /api/sales/{saleId}/payments` (note payments, active and cancelled, with flags)
+      (`ROLE_ADMIN`/`ROLE_CAJERO`/`ROLE_PEDIDOS`); `POST /api/sales/{saleId}/payments`, `GET /api/customers/debts`,
+      `PATCH /api/customers/{customerId}/credit-limit` (`ROLE_ADMIN`)
+    - `SalePaymentController` (`/api/sale-payments`): `PUT /{paymentId}` (modify, body `amount`/`paymentMethodId`/
+      `reason`) and `GET /{paymentId}/history` (`ROLE_ADMIN`/`ROLE_CAJERO`/`ROLE_PEDIDOS`); `PUT /{paymentId}/cancel`
+      (body `reason`) and `GET /history` (`ROLE_ADMIN`; optional `from`/`to` Mexico dates `yyyy-MM-dd`, both
+      inclusive → UTC `[from 00:00, to + 1 day 00:00)`, `employeeId` = who made the change, `customerId`, `action`,
+      plus `Pageable`; newest first)
+    - No body carries an `employeeId`: the employee is the authenticated user (E1)
+- **Out of scope (later phases)**: balance on the printed ticket, per-driver cash count, receivables in the Dashboard
+  (Q12/Q13 still use `paid = false`, so they count `CANCELADO` and full totals; Q6 counts only `ACTIVO`), invoicing
+  partially paid notes (only paid notes are invoiced), returning orders with active payments, Flyway
 
 ### Object Storage (Cloudflare R2)
 

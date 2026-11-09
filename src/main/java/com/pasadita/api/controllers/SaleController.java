@@ -8,6 +8,7 @@ import com.pasadita.api.dto.sale.SaleUpdateDto;
 import com.pasadita.api.dto.ticket.TicketResponseDto;
 import com.pasadita.api.exceptions.EntityNotFoundException;
 import com.pasadita.api.services.sale.SaleService;
+import com.pasadita.api.utils.SecurityUtils;
 import com.pasadita.api.utils.ValidationUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
@@ -42,12 +44,13 @@ public class SaleController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @PostMapping("/save")
-    public ResponseEntity<?> saveSale(@Valid @RequestBody SaleCreateDto saleCreateDto, BindingResult result) {
+    public ResponseEntity<?> saveSale(@Valid @RequestBody SaleCreateDto saleCreateDto, BindingResult result,
+                                      Authentication authentication) {
         if (result.hasErrors()) {
             return ResponseEntity.badRequest().body(ValidationUtils.getValidationErrors(result));
         }
 
-        SaleResponseDto responseDto = saleService.save(saleCreateDto)
+        SaleResponseDto responseDto = saleService.save(saleCreateDto, SecurityUtils.isAdmin(authentication))
                 .orElseThrow(() -> new EntityNotFoundException("Sale could not be saved"));
 
         Boolean printTicket = saleCreateDto.getPrintTicket();
