@@ -24,13 +24,11 @@ import com.pasadita.api.entities.SalePaymentHistory;
 import com.pasadita.api.enums.account.PaymentHistoryAction;
 import com.pasadita.api.enums.account.PaymentStatus;
 import com.pasadita.api.enums.delivery.DeliveryStatus;
-import com.pasadita.api.enums.invoice.InvoiceStatus;
 import com.pasadita.api.exceptions.BusinessRuleException;
 import com.pasadita.api.exceptions.EntityNotFoundException;
 import com.pasadita.api.repositories.CustomerRepository;
 import com.pasadita.api.repositories.DeliveryOrderRepository;
 import com.pasadita.api.repositories.EmployeeRepository;
-import com.pasadita.api.repositories.InvoiceRepository;
 import com.pasadita.api.repositories.PaymentMethodRepository;
 import com.pasadita.api.repositories.SalePaymentHistoryRepository;
 import com.pasadita.api.repositories.SalePaymentRepository;
@@ -78,7 +76,6 @@ public class CustomerAccountServiceImpl implements CustomerAccountService {
     private final SalePaymentHistoryRepository salePaymentHistoryRepository;
     private final EmployeeRepository employeeRepository;
     private final PaymentMethodRepository paymentMethodRepository;
-    private final InvoiceRepository invoiceRepository;
     private final CustomerAccountMapper customerAccountMapper;
     private final PaymentEditPolicy paymentEditPolicy;
     private final SalesProperties salesProperties;
@@ -117,10 +114,6 @@ public class CustomerAccountServiceImpl implements CustomerAccountService {
         if (comparison < 0 && isWalkInCustomer(customer)) {
             throw new BusinessRuleException("Público en general no puede quedar con saldo: cobra el total del pedido ("
                     + formatMoney(total) + ")");
-        }
-        if (comparison < 0) {
-            // A PUE invoice can't sit on a note left unpaid
-            assertNotStamped(sale.getId());
         }
 
         Employee employee = resolveEmployee(actor);
@@ -237,7 +230,6 @@ public class CustomerAccountServiceImpl implements CustomerAccountService {
         if (payment.getStatus() == PaymentStatus.CANCELADO) {
             throw new BusinessRuleException("El abono #" + paymentId + " está cancelado y no se puede modificar");
         }
-        assertNotStamped(saleId);
         Employee actorEmployee = resolveEmployee(actor);
         paymentEditPolicy.assertCanModify(payment, actorEmployee, actor.admin());
 
@@ -287,7 +279,6 @@ public class CustomerAccountServiceImpl implements CustomerAccountService {
             log.info("El abono {} ya estaba cancelado: se devuelve el estado actual", paymentId);
             return currentPaymentState(locked);
         }
-        assertNotStamped(locked.saleId());
         Employee actorEmployee = resolveEmployee(actor);
         String reason = requireReason(paymentCancelDto.getReason());
 
@@ -311,12 +302,8 @@ public class CustomerAccountServiceImpl implements CustomerAccountService {
         if (payments.isEmpty()) {
             return List.of();
         }
-
-        Set<Long> stampedSaleIds = invoiceRepository.existsBySaleIdAndStatus(saleId, InvoiceStatus.TIMBRADA)
-                ? Set.of(saleId)
-                : Set.of();
         return payments.stream()
-                .map(paymentDetailMapper(payments, stampedSaleIds, actor))
+                .map(paymentDetailMapper(payments, actor))
                 .collect(Collectors.toList());
     }
 
@@ -500,16 +487,14 @@ public class CustomerAccountServiceImpl implements CustomerAccountService {
         if (payments.isEmpty()) {
             return Map.of();
         }
-
-        Set<Long> stampedSaleIds = new HashSet<>(invoiceRepository.findSaleIdsByStatus(saleIds, InvoiceStatus.TIMBRADA));
         return payments.stream()
                 .collect(Collectors.groupingBy(payment -> payment.getSale().getId(),
-                        Collectors.mapping(paymentDetailMapper(payments, stampedSaleIds, actor), Collectors.toList())));
+                        Collectors.mapping(paymentDetailMapper(payments, actor), Collectors.toList())));
     }
 
     // modified and editable for a non-empty batch of payments: one history query and the actor resolved once
     private Function<SalePayment, PaymentDetailDto> paymentDetailMapper(Collection<SalePayment> payments,
-                                                                        Set<Long> stampedSaleIds, PaymentActor actor) {
+                                                                        PaymentActor actor) {
         List<Long> paymentIds = payments.stream()
                 .map(SalePayment::getId)
                 .collect(Collectors.toList());
@@ -517,8 +502,7 @@ public class CustomerAccountServiceImpl implements CustomerAccountService {
         Employee actorEmployee = resolveEmployee(actor);
         return payment -> customerAccountMapper.toPaymentDetailDto(payment,
                 modifiedPaymentIds.contains(payment.getId()),
-                paymentEditPolicy.isEditable(payment, actorEmployee, actor.admin(),
-                        stampedSaleIds.contains(payment.getSale().getId())));
+                paymentEditPolicy.isEditable(payment, actorEmployee, actor.admin()));
     }
 
     // Customer debt (R10): notes whose order is PENDIENTE, oldest first, each with its total minus its active payments
@@ -611,14 +595,6 @@ public class CustomerAccountServiceImpl implements CustomerAccountService {
                 .changedBy(changedBy)
                 .changedAt(DateTimeUtils.nowUtc())
                 .build());
-    }
-
-    // X3: a PUE invoice can't end up on an unpaid note, so a stamped note's payments are frozen
-    private void assertNotStamped(Long saleId) {
-        if (invoiceRepository.existsBySaleIdAndStatus(saleId, InvoiceStatus.TIMBRADA)) {
-            throw new BusinessRuleException("La nota #" + saleId + " tiene una factura timbrada. Cancela primero la "
-                    + "factura");
-        }
     }
 
     private Customer lockCustomer(Long customerId) {

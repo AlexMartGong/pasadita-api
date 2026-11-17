@@ -22,12 +22,10 @@ import com.pasadita.api.entities.SalePaymentHistory;
 import com.pasadita.api.enums.account.PaymentHistoryAction;
 import com.pasadita.api.enums.account.PaymentStatus;
 import com.pasadita.api.enums.delivery.DeliveryStatus;
-import com.pasadita.api.enums.invoice.InvoiceStatus;
 import com.pasadita.api.exceptions.BusinessRuleException;
 import com.pasadita.api.repositories.CustomerRepository;
 import com.pasadita.api.repositories.DeliveryOrderRepository;
 import com.pasadita.api.repositories.EmployeeRepository;
-import com.pasadita.api.repositories.InvoiceRepository;
 import com.pasadita.api.repositories.PaymentMethodRepository;
 import com.pasadita.api.repositories.SalePaymentHistoryRepository;
 import com.pasadita.api.repositories.SalePaymentRepository;
@@ -87,7 +85,6 @@ class CustomerAccountServiceImplTest {
     @Mock private SalePaymentHistoryRepository salePaymentHistoryRepository;
     @Mock private EmployeeRepository employeeRepository;
     @Mock private PaymentMethodRepository paymentMethodRepository;
-    @Mock private InvoiceRepository invoiceRepository;
 
     private CustomerAccountServiceImpl service;
     private final List<SalePayment> savedPayments = new ArrayList<>();
@@ -104,7 +101,7 @@ class CustomerAccountServiceImplTest {
     void setUp() {
         Clock clock = Clock.fixed(NOW_UTC.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
         service = new CustomerAccountServiceImpl(customerRepository, deliveryOrderRepository, salePaymentRepository,
-                salePaymentHistoryRepository, employeeRepository, paymentMethodRepository, invoiceRepository,
+                salePaymentHistoryRepository, employeeRepository, paymentMethodRepository,
                 new CustomerAccountMapper(), new PaymentEditPolicy(clock), new SalesProperties(WALK_IN_CUSTOMER_ID));
 
         for (Employee employee : List.of(cashier, otherCashier, admin)) {
@@ -668,20 +665,6 @@ class CustomerAccountServiceImplTest {
         verify(employeeRepository).findByUsername("cajero2");
     }
 
-    @Test
-    void shortfallIsRejectedWhenTheNoteHasAStampedInvoice() {
-        Customer customer = lockedCustomer(CUSTOMER_ID, "1000");
-        DeliveryOrder deliveryOrder = order(200L, 50L, customer, "700.00", DeliveryStatus.ACTIVO, 0);
-        beingCollected(deliveryOrder);
-        when(invoiceRepository.existsBySaleIdAndStatus(50L, InvoiceStatus.TIMBRADA)).thenReturn(true);
-
-        assertThatThrownBy(() -> service.registerDeliveryCollection(200L, collection("400"), CASHIER))
-                .isInstanceOf(BusinessRuleException.class)
-                .hasMessageContaining("Cancela primero la factura");
-        assertThat(deliveryOrder.getStatus()).isEqualTo(DeliveryStatus.ACTIVO);
-        assertThat(savedPayments).isEmpty();
-    }
-
     // --- modifyPayment ---
 
     @Test
@@ -854,24 +837,25 @@ class CustomerAccountServiceImplTest {
         assertThat(result.getCustomerDebt()).isEqualByComparingTo("300.00");
     }
 
+    // X3 is gone: a stamped invoice no longer freezes the note's payments, so a settled note can be reopened
     @Test
-    void paymentsOfANoteWithAStampedInvoiceCannotBeModifiedOrCancelled() {
+    void paymentsOfASettledNoteCanBeModifiedAndThenCancelled() {
         Customer customer = lockedCustomer(CUSTOMER_ID, "0");
         DeliveryOrder note = order(200L, 50L, customer, "700.00", DeliveryStatus.ACTIVO, 0);
         inMemoryAccount(customer, note);
         SalePayment payment = existingPayment(note, cashier, "700.00", NOW_UTC);
-        when(invoiceRepository.existsBySaleIdAndStatus(50L, InvoiceStatus.TIMBRADA)).thenReturn(true);
 
-        assertThatThrownBy(() -> service.modifyPayment(payment.getId(), change("400", CASH_ID), ADMIN))
-                .isInstanceOf(BusinessRuleException.class)
-                .hasMessageContaining("Cancela primero la factura");
-        assertThatThrownBy(() -> service.cancelPayment(payment.getId(), cancellation(), ADMIN))
-                .isInstanceOf(BusinessRuleException.class)
-                .hasMessageContaining("Cancela primero la factura");
-        assertThat(payment.getAmount()).isEqualByComparingTo("700.00");
-        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.APLICADO);
-        assertThat(note.getStatus()).isEqualTo(DeliveryStatus.ACTIVO);
-        assertThat(savedHistory).isEmpty();
+        PaymentResultDto modified = service.modifyPayment(payment.getId(), change("400", CASH_ID), ADMIN);
+        PaymentResultDto cancelled = service.cancelPayment(payment.getId(), cancellation(), ADMIN);
+
+        assertThat(modified.getOrderStatus()).isEqualTo(DeliveryStatus.PENDIENTE);
+        assertThat(modified.getSaleBalance()).isEqualByComparingTo("300.00");
+        assertThat(cancelled.getSaleBalance()).isEqualByComparingTo("700.00");
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELADO);
+        assertThat(note.getStatus()).isEqualTo(DeliveryStatus.PENDIENTE);
+        assertThat(note.getSale().getPaid()).isFalse();
+        assertThat(savedHistory).extracting(SalePaymentHistory::getAction)
+                .containsExactly(PaymentHistoryAction.MODIFICADO, PaymentHistoryAction.CANCELADO);
     }
 
     @Test
@@ -1024,27 +1008,26 @@ class CustomerAccountServiceImplTest {
     }
 
     @Test
-    void accountStatementShowsOnlyActivePaymentsAndNothingIsEditableOnAStampedNote() {
+    void accountStatementShowsOnlyActivePaymentsAndTheCallersOwnOfTheDayAreEditable() {
         Customer customer = Customer.builder().id(CUSTOMER_ID).name("Clienta").creditLimit(BigDecimal.ZERO).build();
-        DeliveryOrder stampedNote = order(101L, 1L, customer, "1000.00", DeliveryStatus.PENDIENTE, 0);
-        DeliveryOrder plainNote = order(102L, 2L, customer, "500.00", DeliveryStatus.PENDIENTE, 1);
-        inMemoryAccount(customer, stampedNote, plainNote);
+        DeliveryOrder olderNote = order(101L, 1L, customer, "1000.00", DeliveryStatus.PENDIENTE, 0);
+        DeliveryOrder newerNote = order(102L, 2L, customer, "500.00", DeliveryStatus.PENDIENTE, 1);
+        inMemoryAccount(customer, olderNote, newerNote);
         when(customerRepository.findById(CUSTOMER_ID)).thenReturn(Optional.of(customer));
-        SalePayment onStamped = existingPayment(stampedNote, cashier, "100.00", NOW_UTC);
-        existingPayment(stampedNote, cashier, "50.00", NOW_UTC).setStatus(PaymentStatus.CANCELADO);
-        SalePayment onPlain = existingPayment(plainNote, cashier, "200.00", NOW_UTC);
-        when(invoiceRepository.findSaleIdsByStatus(anyCollection(), eq(InvoiceStatus.TIMBRADA))).thenReturn(List.of(1L));
+        SalePayment onOlder = existingPayment(olderNote, cashier, "100.00", NOW_UTC);
+        existingPayment(olderNote, cashier, "50.00", NOW_UTC).setStatus(PaymentStatus.CANCELADO);
+        SalePayment onNewer = existingPayment(newerNote, cashier, "200.00", NOW_UTC);
 
         CustomerAccountResponseDto account = service.getAccount(CUSTOMER_ID, CASHIER);
 
         assertThat(account.getTotalDebt()).isEqualByComparingTo("1200.00");
         assertThat(account.getPendingNotes()).satisfiesExactly(
-                stamped -> assertThat(stamped.getPayments()).singleElement().satisfies(detail -> {
-                    assertThat(detail.getPaymentId()).isEqualTo(onStamped.getId());
-                    assertThat(detail.isEditable()).isFalse();
+                older -> assertThat(older.getPayments()).singleElement().satisfies(detail -> {
+                    assertThat(detail.getPaymentId()).isEqualTo(onOlder.getId());
+                    assertThat(detail.isEditable()).isTrue();
                 }),
-                plain -> assertThat(plain.getPayments()).singleElement().satisfies(detail -> {
-                    assertThat(detail.getPaymentId()).isEqualTo(onPlain.getId());
+                newer -> assertThat(newer.getPayments()).singleElement().satisfies(detail -> {
+                    assertThat(detail.getPaymentId()).isEqualTo(onNewer.getId());
                     assertThat(detail.getStatus()).isEqualTo(PaymentStatus.APLICADO);
                     assertThat(detail.isEditable()).isTrue();
                 }));
