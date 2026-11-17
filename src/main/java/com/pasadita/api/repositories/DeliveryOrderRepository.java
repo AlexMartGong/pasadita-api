@@ -28,6 +28,8 @@ public interface DeliveryOrderRepository extends CrudRepository<DeliveryOrder, L
 
     boolean existsBySaleId(Long saleId);
 
+    boolean existsBySaleIdAndStatus(Long saleId, DeliveryStatus status);
+
     @EntityGraph(attributePaths = {"sale"})
     Optional<DeliveryOrder> findWithSaleById(Long id);
 

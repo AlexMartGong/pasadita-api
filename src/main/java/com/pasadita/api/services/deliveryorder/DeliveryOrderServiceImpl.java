@@ -18,10 +18,13 @@ import com.pasadita.api.repositories.EmployeeRepository;
 import com.pasadita.api.repositories.SalePaymentRepository;
 import com.pasadita.api.repositories.SaleRepository;
 import com.pasadita.api.services.account.CustomerAccountService;
+import com.pasadita.api.services.invoice.InvoiceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.pasadita.api.exceptions.BusinessRuleException;
 import com.pasadita.api.exceptions.EntityNotFoundException;
@@ -37,7 +40,6 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Transactional
 public class DeliveryOrderServiceImpl implements DeliveryOrderService {
 
     private final DeliveryOrderRepository deliveryOrderRepository;
@@ -47,6 +49,8 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
     private final CustomerRepository customerRepository;
     private final SalePaymentRepository salePaymentRepository;
     private final CustomerAccountService customerAccountService;
+    private final InvoiceService invoiceService;
+    private final PlatformTransactionManager transactionManager;
 
     @Override
     @Transactional(readOnly = true)
@@ -81,6 +85,7 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
     }
 
     @Override
+    @Transactional
     public Optional<DeliveryOrderResponseDto> save(DeliveryOrderCreateDto deliveryOrderCreateDto, boolean requestedByAdmin) {
         Sale sale = findSaleById(deliveryOrderCreateDto.getSaleId());
         // R1: every delivery order starts ACTIVO on a fully paid sale
@@ -97,6 +102,7 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
     }
 
     @Override
+    @Transactional
     public Optional<DeliveryOrderResponseDto> update(Long id, DeliveryOrderUpdateDto deliveryOrderUpdateDto) {
         DeliveryOrder deliveryOrder = deliveryOrderRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Delivery order not found with id: " + id));
@@ -109,10 +115,9 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
         return Optional.ofNullable(toResponseDto(updatedDeliveryOrder));
     }
 
-    // READ_COMMITTED + customer lock, like CustomerAccountServiceImpl: the payments check must see a payment that a
-    // concurrent collection has just committed for the same note
+    // Not transactional: the note's stamped invoice is cancelled at Facturapi between the checks and the write, so no
+    // DB connection is held during that call. Strict: if Facturapi fails, the order stays as it was
     @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
     public Optional<DeliveryOrderResponseDto> changeStatus(Long id, DeliveryOrderChangeStatusDto deliveryOrderChangeStatusDto) {
         // R8: ACTIVO and PENDIENTE are driven only by money (collections and payments)
         if (deliveryOrderChangeStatusDto.getStatus() != DeliveryStatus.CANCELADO) {
@@ -120,15 +125,27 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
                     + "los cambian el cobro del pedido y los abonos");
         }
 
-        DeliveryOrder deliveryOrder = deliveryOrderRepository.findWithSaleById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Delivery order not found with id: " + id));
+        // R14 before Facturapi is touched; it's checked again under the customer lock before writing
+        Long saleId = findWithSaleById(id).getSale().getId();
+        assertNoActivePayments(id, saleId);
+        invoiceService.cancelInvoiceOfCancelledSale(saleId);
+
+        // shortcut: the customer lock can't be held across the Facturapi call, so a collection landing in between
+        // makes the write fail after the invoice was cancelled at SAT (and that note can't be invoiced again);
+        // revisit if it shows up in practice
+        TransactionTemplate readCommitted = new TransactionTemplate(transactionManager);
+        readCommitted.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+        return readCommitted.execute(status -> cancelOrder(id));
+    }
+
+    // READ_COMMITTED + customer lock, like CustomerAccountServiceImpl: the payments check must see a payment that a
+    // concurrent collection has just committed for the same note. The DTO is built inside the transaction because
+    // the mapper reads the LAZY customer
+    private Optional<DeliveryOrderResponseDto> cancelOrder(Long id) {
+        DeliveryOrder deliveryOrder = findWithSaleById(id);
         Sale sale = deliveryOrder.getSale();
         customerRepository.findByIdForUpdate(sale.getCustomer().getId());
-
-        // R14: an order whose note has active payments can't be cancelled (cancelled payments don't count)
-        if (salePaymentRepository.existsBySaleIdAndStatus(sale.getId(), PaymentStatus.APLICADO)) {
-            throw new BusinessRuleException("No se puede cancelar el pedido #" + id + ": su nota tiene abonos registrados");
-        }
+        assertNoActivePayments(id, sale.getId());
 
         sale.setPaid(false);
         saleRepository.save(sale);
@@ -136,6 +153,19 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
         DeliveryOrder updatedDeliveryOrder = deliveryOrderRepository.save(deliveryOrder);
 
         return Optional.ofNullable(toResponseDto(updatedDeliveryOrder));
+    }
+
+    // R14: an order whose note has active payments can't be cancelled (cancelled payments don't count)
+    private void assertNoActivePayments(Long orderId, Long saleId) {
+        if (salePaymentRepository.existsBySaleIdAndStatus(saleId, PaymentStatus.APLICADO)) {
+            throw new BusinessRuleException("No se puede cancelar el pedido #" + orderId
+                    + ": su nota tiene abonos registrados");
+        }
+    }
+
+    private DeliveryOrder findWithSaleById(Long id) {
+        return deliveryOrderRepository.findWithSaleById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Delivery order not found with id: " + id));
     }
 
     // requestedToday is computed here too: the frontend merges these single-order answers into the delivery list

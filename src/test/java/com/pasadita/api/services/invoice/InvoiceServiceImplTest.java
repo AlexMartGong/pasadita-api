@@ -10,16 +10,20 @@ import com.pasadita.api.entities.PaymentMethod;
 import com.pasadita.api.entities.Product;
 import com.pasadita.api.entities.Sale;
 import com.pasadita.api.entities.SaleDetail;
+import com.pasadita.api.enums.delivery.DeliveryStatus;
 import com.pasadita.api.enums.invoice.InvoiceStatus;
 import com.pasadita.api.enums.product.UnitMeasure;
 import com.pasadita.api.exceptions.BusinessRuleException;
 import com.pasadita.api.exceptions.EntityNotFoundException;
 import com.pasadita.api.repositories.CustomerFiscalDataRepository;
+import com.pasadita.api.repositories.DeliveryOrderRepository;
 import com.pasadita.api.repositories.InvoiceRepository;
 import com.pasadita.api.repositories.SaleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -57,6 +61,7 @@ class InvoiceServiceImplTest {
 
     @Mock private InvoiceRepository invoiceRepository;
     @Mock private SaleRepository saleRepository;
+    @Mock private DeliveryOrderRepository deliveryOrderRepository;
     @Mock private CustomerFiscalDataRepository fiscalDataRepository;
     @Mock private InvoiceMapper invoiceMapper;
     @Mock private InvoiceServiceImpl.InvoiceErrorPersister invoiceErrorPersister;
@@ -81,6 +86,7 @@ class InvoiceServiceImplTest {
         service = new InvoiceServiceImpl(
                 invoiceRepository,
                 saleRepository,
+                deliveryOrderRepository,
                 fiscalDataRepository,
                 invoiceMapper,
                 invoiceErrorPersister,
@@ -394,9 +400,23 @@ class InvoiceServiceImplTest {
     }
 
     @Test
-    void timbrarInvoice_unpaidSale_throwsBusinessRule_andSkipsFacturapi() throws Exception {
+    void timbrarInvoice_pendingDeliveryOrder_stampsTheUnpaidNote() throws Exception {
+        sale.setPaid(false);
+        stubSuccessfulStamping();
+        when(deliveryOrderRepository.existsBySaleIdAndStatus(sale.getId(), DeliveryStatus.PENDIENTE)).thenReturn(true);
+
+        service.timbrarInvoice(dto);
+
+        assertThat(persistedInvoice.getStatus()).isEqualTo(InvoiceStatus.TIMBRADA);
+        verify(httpClient, times(1)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
+    }
+
+    // A cancelled order leaves its sale unpaid, and a sale without a PENDIENTE order can't be invoiced unpaid
+    @Test
+    void timbrarInvoice_unpaidSaleWithoutPendingOrder_throwsBusinessRule_andSkipsFacturapi() throws Exception {
         sale.setPaid(false);
         when(saleRepository.findWithDetailsById(sale.getId())).thenReturn(Optional.of(sale));
+        when(deliveryOrderRepository.existsBySaleIdAndStatus(sale.getId(), DeliveryStatus.PENDIENTE)).thenReturn(false);
 
         assertThatThrownBy(() -> service.timbrarInvoice(dto))
                 .isInstanceOf(BusinessRuleException.class)
@@ -570,6 +590,73 @@ class InvoiceServiceImplTest {
 
         verify(httpClient, never()).send(any(), any());
         verify(invoiceRepository, never()).save(any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void cancelInvoiceOfCancelledSale_timbrada_cancelsAtFacturapiWithMotive02() throws Exception {
+        persistedInvoice.setStatus(InvoiceStatus.TIMBRADA);
+        persistedInvoice.setXmlUrl("https://www.facturapi.io/v2/invoices/inv_abc/xml");
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.of(persistedInvoice));
+        when(invoiceRepository.findWithDetailsByInvoiceId(900L)).thenReturn(Optional.of(persistedInvoice));
+        when(invoiceRepository.save(any(Invoice.class))).thenAnswer(inv -> inv.getArgument(0));
+        HttpResponse<String> okResponse = (HttpResponse<String>) mock(HttpResponse.class);
+        when(okResponse.statusCode()).thenReturn(200);
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(okResponse);
+
+        service.cancelInvoiceOfCancelledSale(sale.getId());
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(captor.capture(), any(HttpResponse.BodyHandler.class));
+        assertThat(captor.getValue().uri().toString()).isEqualTo("https://www.facturapi.io/v2/invoices/inv_abc?motive=02");
+        assertThat(persistedInvoice.getStatus()).isEqualTo(InvoiceStatus.CANCELADA);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void cancelInvoiceOfCancelledSale_facturapiRejects_propagatesAndKeepsTimbrada() throws Exception {
+        persistedInvoice.setStatus(InvoiceStatus.TIMBRADA);
+        persistedInvoice.setXmlUrl("https://www.facturapi.io/v2/invoices/inv_abc/xml");
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.of(persistedInvoice));
+        when(invoiceRepository.findWithDetailsByInvoiceId(900L)).thenReturn(Optional.of(persistedInvoice));
+        HttpResponse<String> rejected = (HttpResponse<String>) mock(HttpResponse.class);
+        when(rejected.statusCode()).thenReturn(400);
+        when(rejected.body()).thenReturn("{\"message\":\"No se puede cancelar\"}");
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(rejected);
+
+        assertThatThrownBy(() -> service.cancelInvoiceOfCancelledSale(sale.getId()))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("Facturapi rechazó cancelación");
+
+        assertThat(persistedInvoice.getStatus()).isEqualTo(InvoiceStatus.TIMBRADA);
+        verify(invoiceRepository, never()).save(any());
+    }
+
+    // Never stamped at SAT: closed locally, Facturapi is not called
+    @ParameterizedTest
+    @EnumSource(value = InvoiceStatus.class, names = {"PENDIENTE", "ERROR"})
+    void cancelInvoiceOfCancelledSale_notStamped_closesLocallyWithoutFacturapi(InvoiceStatus status) throws Exception {
+        persistedInvoice.setStatus(status);
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.of(persistedInvoice));
+
+        service.cancelInvoiceOfCancelledSale(sale.getId());
+
+        assertThat(persistedInvoice.getStatus()).isEqualTo(InvoiceStatus.CANCELADA);
+        verify(invoiceRepository).save(persistedInvoice);
+        verify(httpClient, never()).send(any(), any());
+    }
+
+    @Test
+    void cancelInvoiceOfCancelledSale_withoutInvoiceOrAlreadyCancelled_doesNothing() throws Exception {
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.empty());
+        service.cancelInvoiceOfCancelledSale(sale.getId());
+
+        persistedInvoice.setStatus(InvoiceStatus.CANCELADA);
+        when(invoiceRepository.findBySaleId(sale.getId())).thenReturn(Optional.of(persistedInvoice));
+        service.cancelInvoiceOfCancelledSale(sale.getId());
+
+        verify(invoiceRepository, never()).save(any());
+        verify(httpClient, never()).send(any(), any());
     }
 
     @Test

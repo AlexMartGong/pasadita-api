@@ -20,12 +20,15 @@ import com.pasadita.api.repositories.SaleRepository;
 import com.pasadita.api.repositories.SaleDetailRepository;
 import com.pasadita.api.repositories.SalePaymentRepository;
 import com.pasadita.api.services.account.CustomerAccountService;
+import com.pasadita.api.services.invoice.InvoiceService;
 import com.pasadita.api.services.saledetail.SaleDetailService;
 import com.pasadita.api.exceptions.BusinessRuleException;
 import com.pasadita.api.exceptions.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -36,7 +39,6 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Transactional
 public class SaleServiceImpl implements SaleService {
 
     private static final BigDecimal NO_DISCOUNT_PRICE_LOWER_BOUND = BigDecimal.ONE;
@@ -54,6 +56,8 @@ public class SaleServiceImpl implements SaleService {
     private final SaleDetailRepository saleDetailRepository;
     private final SalePaymentRepository salePaymentRepository;
     private final CustomerAccountService customerAccountService;
+    private final InvoiceService invoiceService;
+    private final PlatformTransactionManager transactionManager;
 
     @Override
     @Transactional(readOnly = true)
@@ -65,6 +69,7 @@ public class SaleServiceImpl implements SaleService {
     }
 
     @Override
+    @Transactional
     public Optional<SaleResponseDto> save(SaleCreateDto saleCreateDto, boolean requestedByAdmin) {
         Employee employee = findEmployeeById(saleCreateDto.getEmployeeId());
         Customer customer = findCustomerById(saleCreateDto.getCustomerId());
@@ -139,6 +144,7 @@ public class SaleServiceImpl implements SaleService {
     }
 
     @Override
+    @Transactional
     public Optional<SaleResponseDto> update(Long id, SaleUpdateDto saleUpdateDto) {
         Sale existingSale = saleRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Sale not found with id: " + id));
@@ -195,19 +201,27 @@ public class SaleServiceImpl implements SaleService {
                 .orElseThrow(() -> new EntityNotFoundException("Employee not found with id: " + employeeId));
     }
 
+    // Not transactional, like DeliveryOrderServiceImpl.changeStatus: deactivating the sale cancels its stamped invoice
+    // at Facturapi first, without holding a DB connection during that call. Strict: if Facturapi fails, nothing changes
     @Override
     public Optional<SaleResponseDto> changeStatus(Long id, SaleChangeStatusDto changeStatusDto) {
-        Sale sale = saleRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Sale not found with id: " + id));
-
+        if (!saleRepository.existsById(id)) {
+            throw new EntityNotFoundException("Sale not found with id: " + id);
+        }
         if (deliveryOrderRepository.existsBySaleId(id)) {
             throw paidChangeOnDeliverySale(id);
         }
+        if (Boolean.FALSE.equals(changeStatusDto.getPaid())) {
+            invoiceService.cancelInvoiceOfCancelledSale(id);
+        }
 
-        sale.setPaid(changeStatusDto.getPaid());
-        Sale updatedSale = saleRepository.save(sale);
-
-        return Optional.ofNullable(saleMapper.toResponseDto(updatedSale));
+        // The DTO is built inside the transaction because the mapper reads LAZY associations
+        return new TransactionTemplate(transactionManager).execute(status -> {
+            Sale sale = saleRepository.findById(id)
+                    .orElseThrow(() -> new EntityNotFoundException("Sale not found with id: " + id));
+            sale.setPaid(changeStatusDto.getPaid());
+            return Optional.ofNullable(saleMapper.toResponseDto(saleRepository.save(sale)));
+        });
     }
 
     // R8: on a sale with a delivery order, paid only moves together with the order status (collections and payments)

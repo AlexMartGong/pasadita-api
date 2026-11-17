@@ -19,6 +19,7 @@ import com.pasadita.api.repositories.EmployeeRepository;
 import com.pasadita.api.repositories.SalePaymentRepository;
 import com.pasadita.api.repositories.SaleRepository;
 import com.pasadita.api.services.account.CustomerAccountService;
+import com.pasadita.api.services.invoice.InvoiceService;
 import com.pasadita.api.utils.DateTimeUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,8 +27,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -43,6 +47,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -57,13 +62,16 @@ class DeliveryOrderServiceImplTest {
     @Mock private CustomerRepository customerRepository;
     @Mock private SalePaymentRepository salePaymentRepository;
     @Mock private CustomerAccountService customerAccountService;
+    @Mock private InvoiceService invoiceService;
+    @Mock private PlatformTransactionManager transactionManager;
 
     private DeliveryOrderServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new DeliveryOrderServiceImpl(deliveryOrderRepository, saleRepository, employeeRepository,
-                new DeliveryOrderMapper(), customerRepository, salePaymentRepository, customerAccountService);
+                new DeliveryOrderMapper(), customerRepository, salePaymentRepository, customerAccountService,
+                invoiceService, transactionManager);
     }
 
     private DeliveryOrder pendingOrder() {
@@ -91,11 +99,61 @@ class DeliveryOrderServiceImplTest {
         verify(deliveryOrderRepository, never()).save(any());
     }
 
+    // R14 fails before Facturapi is touched, so the note's invoice stays alive
     @Test
-    void cancellingAnOrderWhoseNoteHasPaymentsIsRejected() {
+    void cancellingAnOrderWhoseNoteHasPaymentsIsRejectedBeforeTouchingItsInvoice() {
         DeliveryOrder deliveryOrder = pendingOrder();
         when(deliveryOrderRepository.findWithSaleById(200L)).thenReturn(Optional.of(deliveryOrder));
         when(salePaymentRepository.existsBySaleIdAndStatus(50L, PaymentStatus.APLICADO)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.changeStatus(200L, new DeliveryOrderChangeStatusDto(DeliveryStatus.CANCELADO)))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("abonos");
+        verifyNoInteractions(invoiceService, transactionManager);
+        assertThat(deliveryOrder.getStatus()).isEqualTo(DeliveryStatus.PENDIENTE);
+        verify(deliveryOrderRepository, never()).save(any());
+    }
+
+    @Test
+    void cancellingAnOrderCancelsItsInvoiceFirstAndThenWritesUnderTheLockInReadCommitted() {
+        DeliveryOrder deliveryOrder = pendingOrder();
+        when(deliveryOrderRepository.findWithSaleById(200L)).thenReturn(Optional.of(deliveryOrder));
+        when(deliveryOrderRepository.save(deliveryOrder)).thenReturn(deliveryOrder);
+
+        service.changeStatus(200L, new DeliveryOrderChangeStatusDto(DeliveryStatus.CANCELADO));
+
+        InOrder order = inOrder(invoiceService, transactionManager, customerRepository, deliveryOrderRepository);
+        order.verify(invoiceService).cancelInvoiceOfCancelledSale(50L);
+        ArgumentCaptor<TransactionDefinition> transaction = ArgumentCaptor.forClass(TransactionDefinition.class);
+        order.verify(transactionManager).getTransaction(transaction.capture());
+        order.verify(customerRepository).findByIdForUpdate(20L);
+        order.verify(deliveryOrderRepository).save(deliveryOrder);
+        assertThat(transaction.getValue().getIsolationLevel()).isEqualTo(TransactionDefinition.ISOLATION_READ_COMMITTED);
+        assertThat(deliveryOrder.getStatus()).isEqualTo(DeliveryStatus.CANCELADO);
+    }
+
+    // Strict: an invoice Facturapi couldn't cancel keeps the order as it was
+    @Test
+    void facturapiFailureLeavesTheOrderAsItWas() {
+        DeliveryOrder deliveryOrder = pendingOrder();
+        when(deliveryOrderRepository.findWithSaleById(200L)).thenReturn(Optional.of(deliveryOrder));
+        doThrow(new BusinessRuleException("Facturapi rechazó cancelación (HTTP 400)"))
+                .when(invoiceService).cancelInvoiceOfCancelledSale(50L);
+
+        assertThatThrownBy(() -> service.changeStatus(200L, new DeliveryOrderChangeStatusDto(DeliveryStatus.CANCELADO)))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("Facturapi");
+        verifyNoInteractions(transactionManager);
+        assertThat(deliveryOrder.getStatus()).isEqualTo(DeliveryStatus.PENDIENTE);
+        verify(deliveryOrderRepository, never()).save(any());
+    }
+
+    // The known gap between the phases: a payment committed during the Facturapi call still stops the write
+    @Test
+    void paymentRecordedWhileTheInvoiceIsCancelledStopsTheWriteUnderTheLock() {
+        DeliveryOrder deliveryOrder = pendingOrder();
+        when(deliveryOrderRepository.findWithSaleById(200L)).thenReturn(Optional.of(deliveryOrder));
+        when(salePaymentRepository.existsBySaleIdAndStatus(50L, PaymentStatus.APLICADO)).thenReturn(false, true);
 
         assertThatThrownBy(() -> service.changeStatus(200L, new DeliveryOrderChangeStatusDto(DeliveryStatus.CANCELADO)))
                 .isInstanceOf(BusinessRuleException.class)

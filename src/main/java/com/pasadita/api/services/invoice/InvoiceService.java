@@ -19,5 +19,7 @@ public interface InvoiceService {
 
     InvoiceResponseDto cancelInvoice(Long invoiceId, String motive);
 
+    void cancelInvoiceOfCancelledSale(Long saleId);
+
     void sendInvoiceEmail(Long saleId, String targetEmail);
 }
