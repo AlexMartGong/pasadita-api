@@ -13,9 +13,16 @@ import java.util.Optional;
 
 public interface DeliveryOrderRepository extends CrudRepository<DeliveryOrder, Long> {
 
-    @Query("SELECT d FROM DeliveryOrder d WHERE d.requestDate >= :startOfDay AND d.requestDate < :endOfDay")
-    List<DeliveryOrder> findByRequestDateBetween(@Param("startOfDay") LocalDateTime startOfDay,
-                                                   @Param("endOfDay") LocalDateTime endOfDay);
+    // Delivery list: the orders requested in the range plus every order in the given status, whatever its day
+    @EntityGraph(attributePaths = {"sale", "sale.customer"})
+    @Query("""
+            SELECT d FROM DeliveryOrder d
+            WHERE (d.requestDate >= :startOfDay AND d.requestDate < :endOfDay) OR d.status = :status
+            ORDER BY d.requestDate ASC, d.id ASC
+            """)
+    List<DeliveryOrder> findRequestedBetweenOrWithStatus(@Param("startOfDay") LocalDateTime startOfDay,
+                                                         @Param("endOfDay") LocalDateTime endOfDay,
+                                                         @Param("status") DeliveryStatus status);
 
     Optional<DeliveryOrder> findBySaleId(Long saleId);
 

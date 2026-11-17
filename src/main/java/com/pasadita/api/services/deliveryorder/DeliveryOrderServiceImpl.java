@@ -28,7 +28,6 @@ import com.pasadita.api.exceptions.EntityNotFoundException;
 import com.pasadita.api.utils.DateTimeUtils;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -52,18 +51,23 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
     @Override
     @Transactional(readOnly = true)
     public DeliveryOrderSummaryDto findAll() {
-        LocalDateTime startOfDayMexico = LocalDate.now(DateTimeUtils.MEXICO_ZONE).atStartOfDay();
-        LocalDateTime startOfDay = DateTimeUtils.toUtc(startOfDayMexico);
-        LocalDateTime endOfDay = DateTimeUtils.toUtc(startOfDayMexico.plusDays(1));
+        DayRange today = DayRange.todayInMexico();
 
-        List<DeliveryOrder> deliveryOrders = deliveryOrderRepository.findByRequestDateBetween(startOfDay, endOfDay);
+        // Today's orders plus every order still PENDIENTE: a balance from an earlier day stays listed until settled
+        List<DeliveryOrder> deliveryOrders = deliveryOrderRepository
+                .findRequestedBetweenOrWithStatus(today.start(), today.end(), DeliveryStatus.PENDIENTE);
         Map<Long, BigDecimal> paidBySaleId = findPaidAmountsBySaleId(deliveryOrders);
         List<DeliveryOrderResponseDto> orderDtos = deliveryOrders.stream()
-                .map(order -> deliveryOrderMapper.toResponseDto(order, paidAmountOf(order, paidBySaleId)))
+                .map(order -> deliveryOrderMapper.toResponseDto(order, paidAmountOf(order, paidBySaleId),
+                        today.contains(order.getRequestDate())))
                 .collect(Collectors.toList());
 
-        int totalOrders = orderDtos.size();
-        BigDecimal totalAmount = orderDtos.stream()
+        // The summary figures stay the day's: orders from earlier days are listed but never counted
+        List<DeliveryOrderResponseDto> todaysOrders = orderDtos.stream()
+                .filter(DeliveryOrderResponseDto::isRequestedToday)
+                .collect(Collectors.toList());
+        int totalOrders = todaysOrders.size();
+        BigDecimal totalAmount = todaysOrders.stream()
                 .filter(DeliveryOrderResponseDto::isPaid)
                 .map(DeliveryOrderResponseDto::getTotal)
                 .filter(Objects::nonNull)
@@ -134,9 +138,11 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
         return Optional.ofNullable(toResponseDto(updatedDeliveryOrder));
     }
 
+    // requestedToday is computed here too: the frontend merges these single-order answers into the delivery list
     private DeliveryOrderResponseDto toResponseDto(DeliveryOrder deliveryOrder) {
         Map<Long, BigDecimal> paidBySaleId = findPaidAmountsBySaleId(List.of(deliveryOrder));
-        return deliveryOrderMapper.toResponseDto(deliveryOrder, paidAmountOf(deliveryOrder, paidBySaleId));
+        return deliveryOrderMapper.toResponseDto(deliveryOrder, paidAmountOf(deliveryOrder, paidBySaleId),
+                DayRange.todayInMexico().contains(deliveryOrder.getRequestDate()));
     }
 
     // One aggregate query of active payments for every listed order, whatever its status: the PENDIENTE ones show their
@@ -167,5 +173,19 @@ public class DeliveryOrderServiceImpl implements DeliveryOrderService {
     private Employee findEmployeeById(Long employeeId) {
         return employeeRepository.findById(employeeId)
                 .orElseThrow(() -> new EntityNotFoundException("Employee not found with id: " + employeeId));
+    }
+
+    // Mexico's current day as the UTC range [start, end) that request_date is stored in. The same bounds select the
+    // day's orders and flag them, so the list and requestedToday can't disagree
+    private record DayRange(LocalDateTime start, LocalDateTime end) {
+
+        static DayRange todayInMexico() {
+            LocalDateTime startOfDayMexico = DateTimeUtils.nowMexico().toLocalDate().atStartOfDay();
+            return new DayRange(DateTimeUtils.toUtc(startOfDayMexico), DateTimeUtils.toUtc(startOfDayMexico.plusDays(1)));
+        }
+
+        boolean contains(LocalDateTime utcDateTime) {
+            return utcDateTime != null && !utcDateTime.isBefore(start) && utcDateTime.isBefore(end);
+        }
     }
 }

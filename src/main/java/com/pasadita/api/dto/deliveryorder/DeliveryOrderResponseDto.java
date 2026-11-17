@@ -17,6 +17,10 @@ public class DeliveryOrderResponseDto {
     private Long id;
     private Long saleId;
     private LocalDateTime requestDate;
+    // Requested during Mexico's current day. The delivery list also carries PENDIENTE orders from earlier days,
+    // which must stay out of the day's figures
+    private boolean requestedToday;
+    private Long customerId;
     private String customerName;
     private String deliveryAddress;
     private String contactPhone;
