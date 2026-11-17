@@ -263,6 +263,17 @@ class SaleServiceImplTest {
         assertThat(sale.getPaid()).isTrue();
     }
 
+    @Test
+    void orderCreatedWhileTheInvoiceIsCancelledStopsTheWrite() {
+        when(saleRepository.existsById(7L)).thenReturn(true);
+        when(deliveryOrderRepository.existsBySaleId(7L)).thenReturn(false, true);
+
+        assertThatThrownBy(() -> service.changeStatus(7L, new SaleChangeStatusDto(false)))
+                .isInstanceOf(BusinessRuleException.class);
+        verify(invoiceService).cancelInvoiceOfCancelledSale(7L);
+        verify(saleRepository, never()).save(any());
+    }
+
     // Strict: an invoice Facturapi couldn't cancel keeps the sale paid
     @Test
     void facturapiFailureLeavesTheSaleAsItWas() {

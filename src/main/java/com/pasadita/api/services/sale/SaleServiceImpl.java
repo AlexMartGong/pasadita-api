@@ -217,6 +217,10 @@ public class SaleServiceImpl implements SaleService {
 
         // The DTO is built inside the transaction because the mapper reads LAZY associations
         return new TransactionTemplate(transactionManager).execute(status -> {
+            // R8 again: an order created for this sale during the Facturapi call stops the write
+            if (deliveryOrderRepository.existsBySaleId(id)) {
+                throw paidChangeOnDeliverySale(id);
+            }
             Sale sale = saleRepository.findById(id)
                     .orElseThrow(() -> new EntityNotFoundException("Sale not found with id: " + id));
             sale.setPaid(changeStatusDto.getPaid());

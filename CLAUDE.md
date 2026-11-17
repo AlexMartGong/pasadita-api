@@ -451,7 +451,7 @@ Current domains include:
       transaction around them (neither class has a class-level `@Transactional`; `save`/`update` carry their own):
       (1) local checks — R8, R14 for orders — so a rejected cancel never reaches Facturapi, (2) the invoice call with
       no connection held, (3) the write in a short `TransactionTemplate` transaction (`READ_COMMITTED` + customer
-      lock + R14 again for orders) that also builds the DTO, because the mappers read LAZY associations and prod has
+      lock + R14 again for orders, R8 again for sales) that also builds the DTO, because the mappers read LAZY associations and prod has
       `open-in-view=false`. A `TransactionTemplate` because calling a `@Transactional` method of the same class skips
       the proxy. Known gap (`shortcut:` in the code): the lock can't span the Facturapi call, so a payment committed
       in between makes phase 3 fail after the invoice was cancelled at SAT, and since `CANCELADA` is final that note
