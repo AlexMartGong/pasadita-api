@@ -238,7 +238,9 @@ Services follow a consistent interface/implementation pattern:
 - Use `@Transactional` annotations for database operations
 - Read-only operations use `@Transactional(readOnly = true)`
 - **Newer services use constructor injection with Lombok `@RequiredArgsConstructor`** instead of `@Autowired`
-- Class-level `@Transactional` can be applied with method-level overrides for read-only operations
+- Class-level `@Transactional` can be applied with method-level overrides for read-only operations — except on a
+  service with a method that calls Facturapi (`SaleServiceImpl`, `DeliveryOrderServiceImpl`): there each method
+  declares its own, so that method runs with no transaction at all (see Invoice, automatic cancellation)
 
 ### DTO Mapper Pattern
 
@@ -290,22 +292,27 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
 - Main test class: `PasaditaApiApplicationTests`
 - Pure Mockito unit tests (no Spring context) for service rules: `InvoiceServiceImplTest` (stamping happy path,
   single Facturapi request with inline customer/products regardless of item count, RESICO ISR retention, SAT catalog validation, `PENDIENTE`/`ERROR` row reuse vs. finalized rejection, Facturapi
-  rejection message transparency + `markAsError`, cancel/email flows), `SaleServiceImplTest`
+  rejection message transparency + `markAsError`, cancel/email flows, an unpaid note stamped when its order is
+  `PENDIENTE` vs. rejected without one, `cancelInvoiceOfCancelledSale`: `TIMBRADA` → Facturapi with motive `02`,
+  Facturapi rejection propagates, `PENDIENTE`/`ERROR` closed locally, none/`CANCELADA` untouched), `SaleServiceImplTest`
   (discount rule: range bounds, cap, per-quantity accumulation, derived sale totals; R15 `update` with active payments,
-  R8 `paid` changes on sales with an order, R12 credit check on sale + order), `CustomerAccountServiceImplTest` (abonos:
+  R8 `paid` changes on sales with an order before touching the invoice, deactivating cancels the invoice before the
+  write transaction, reactivating leaves it alone, a Facturapi failure writes nothing, R12 credit check on sale +
+  order), `CustomerAccountServiceImplTest` (abonos:
   business example A/B/C, shortfall/zero/exact/surplus collections, oldest-first settlement + change, walk-in R9,
   preconditions, `clientRequestId` replay, second collection of a surplus order rejected and no-debt surplus retry
   replayed — both with payment lookups backed by the saved rows, over-limit flag, R12, sale payment cap/settle,
   scale-insensitive amounts; phase 1.1, mostly over an in-memory account whose lookups read the saved rows and skip
   cancelled ones: modify up settles / down reopens + over-limit, M2 cap and 0, M6 owner/other employee/other Mexico
-  day, M3, M5 no-op, X3 on modify/cancel/short collection, walk-in lowering vs method change vs cancel, idempotent
+  day, M3, M5 no-op, a settled note's payment modified and then cancelled, walk-in lowering vs method change vs cancel, idempotent
   cancel, cancelling a surplus note's own row reopens it and a second collection stays rejected, retry of a cancelled
   request, cancelled rows out of debt and the note cap, `CREADO`/`MODIFICADO`/`CANCELADO` rows, employee from the
   `PaymentActor`, `editable`/`modified` in the note list and the account statement), `PaymentEditPolicyTest` (the
   `editable` matrix with a fixed `Clock`), `PaymentHistoryServiceImplTest` (Mexico dates → UTC range with exclusive
   end, `from > to`, unknown payment),
-  `DeliveryOrderServiceImplTest` (manual status only to `CANCELADO`, R14 cancel with active payments / only cancelled
-  ones, `hasPayments` + PENDIENTE-only balance from one aggregate, the delivery list: `PENDIENTE` orders of earlier
+  `DeliveryOrderServiceImplTest` (manual status only to `CANCELADO`, R14 cancel with active payments — rejected before
+  the invoice is touched — / only cancelled ones, cancel order: invoice first, then the `READ_COMMITTED` write under
+  the lock, a Facturapi failure writes nothing, a payment committed between the phases stops the write, `hasPayments` + PENDIENTE-only balance from one aggregate, the delivery list: `PENDIENTE` orders of earlier
   days listed with `requestedToday = false` and left out of `totalOrders`/`totalAmount`, the query bounds = Mexico's
   day in UTC, the flag on single-order answers; R1 unpaid sale, credit check with the caller role),
   `SalePaymentControllerTest` / `CustomerAccountControllerTest` (the `PaymentActor` comes from the `Authentication`),
@@ -383,7 +390,9 @@ Current domains include:
           `subtotal`/`unitPrice`); `total = subtotal − discountAmount` holds by construction
         - Applies only to `save`; `update()` re-inserts details without recomputing amounts (known gap)
     - `update()` is rejected when the sale has active payments (R15) and when it would change `paid` on a sale with a delivery
-      order; `PUT /api/sales/change-status/{id}` is rejected for sales with a delivery order (R8, see Customer account)
+      order; `PUT /api/sales/change-status/{id}` is rejected for sales with a delivery order (R8, see Customer account).
+      Setting `paid = false` (deactivating a counter sale) first cancels the sale's invoice (see Invoice, automatic
+      cancellation)
 - **SaleDetail**: Line items for sales
     - ManyToOne relationships with Sale and Product
     - Tracks quantity, unit price, subtotal, discount, and total (all server-computed under the discount rule above)
@@ -404,7 +413,8 @@ Current domains include:
       `POST /api/delivery-orders/save` for an existing sale, which must be paid — R1) always as `ACTIVO` with
       `sales.paid = 1`; both paths run the R12 credit check (see Customer account)
     - `PUT /api/delivery-orders/change-status/{id}` only accepts `CANCELADO` (R8) and rejects orders whose note has
-      active payments (R14); cancelling still sets `sales.paid = 0`
+      active payments (R14); cancelling still sets `sales.paid = 0` and first cancels the note's invoice (see Invoice,
+      automatic cancellation)
     - **Delivery list** (`GET /api/delivery-orders/all` → `DeliveryOrderServiceImpl.findAll`): the orders requested
       during Mexico's current day **plus every `PENDIENTE` order of any earlier day**, so a balance stays listed
       (with its `balance`/`hasPayments`) until it is settled; those are also all the pending notes the collections
@@ -428,7 +438,26 @@ Current domains include:
     - OneToOne with `Sale` (unique), ManyToOne with `CustomerFiscalData`
     - Status enum (`InvoiceStatus`): `PENDIENTE`, `TIMBRADA`, `CANCELADA`, `ERROR` — defaults to `PENDIENTE`
     - Tracks `uuid` (SAT folio), `xmlUrl`, `pdfUrl`, `createdAt`, `timbradoAt`
-    - Service rules: sale must be paid, fiscal data must be active
+    - Service rules (`assertInvoiceable`, both `createInvoiceRequest` and `timbrarInvoice`): the sale is paid **or**
+      its delivery order is `PENDIENTE` (a note left with a balance); a cancelled order or a deactivated sale is unpaid
+      without a `PENDIENTE` order, so it's rejected. Fiscal data must be active. Every invoice is stamped `PUE` with
+      the sale's payment form, also for `PENDIENTE` notes — the business accepted this; PPD + complementos de pago are
+      a later phase
+    - **Automatic cancellation** (`cancelInvoiceOfCancelledSale(saleId)`, not `@Transactional`): called when an order
+      is cancelled (`DeliveryOrderServiceImpl.changeStatus`) or a sale without an order is set to `paid = false`
+      (`SaleServiceImpl.changeStatus`). `TIMBRADA` → `cancelInvoice(id, "02")` at Facturapi; `PENDIENTE`/`ERROR`
+      (never stamped at SAT) → `CANCELADA` locally; none or `CANCELADA` → nothing. Strict: a Facturapi failure is a
+      `BusinessRuleException` and the order/sale is left as it was. Both `changeStatus` run in three phases with no
+      transaction around them (neither class has a class-level `@Transactional`; `save`/`update` carry their own):
+      (1) local checks — R8, R14 for orders — so a rejected cancel never reaches Facturapi, (2) the invoice call with
+      no connection held, (3) the write in a short `TransactionTemplate` transaction (`READ_COMMITTED` + customer
+      lock + R14 again for orders, R8 again for sales) that also builds the DTO, because the mappers read LAZY associations and prod has
+      `open-in-view=false`. A `TransactionTemplate` because calling a `@Transactional` method of the same class skips
+      the proxy. Known gap (`shortcut:` in the code): the lock can't span the Facturapi call, so a payment committed
+      in between makes phase 3 fail after the invoice was cancelled at SAT, and since `CANCELADA` is final that note
+      can't be invoiced again. Likewise, an order cancelled while its invoice is still being stamped can end up
+      `CANCELADO` with a `TIMBRADA` invoice. The three endpoints that cancel a CFDI (order and sale `change-status`,
+      `DELETE /api/invoices/{id}`) are all `ROLE_ADMIN`
     - **Row reuse (sale_id is UNIQUE)**: both `createInvoiceRequest` and `timbrarInvoice` go through
       `findOrCreatePendingInvoice` — an existing `PENDIENTE`/`ERROR` row for the sale is **updated in place**
       (fiscal data refreshed, status reset to `PENDIENTE`) instead of inserting a new row (which would hit the
@@ -443,7 +472,7 @@ Current domains include:
       outlasted the frontend's 10 s axios timeout (`AxiosError: timeout of 10000ms exceeded`) and every invoice
       duplicated catalog entries. The response is read as a Jackson `JsonNode` (only `id`/`uuid`), not through the SDK
       models, so a response-model mismatch can never fail a call whose CFDI is already stamped at SAT
-    - **Transaction isolation**: `timbrarInvoice`, `cancelInvoice`, and `sendInvoiceEmail` are deliberately **not**
+    - **Transaction isolation**: `timbrarInvoice`, `cancelInvoice`, `cancelInvoiceOfCancelledSale` and `sendInvoiceEmail` are deliberately **not**
       `@Transactional` — Facturapi HTTP calls (stamping can take several seconds) must not hold a MySQL/Hikari connection.
       Flow is three phases: persist `PENDIENTE` (short implicit repository tx), remote call outside any tx, persist
       `TIMBRADA`/`ERROR` result (short tx). Safe because `SaleRepository.findWithDetailsById` eager-fetches via
@@ -515,8 +544,8 @@ to its total (settled by payments, or collected with a surplus).
     - Delivery collection (`registerDeliveryCollection`, R3–R5): order must be `ACTIVO` with no active payments.
       `amountReceived` = what the customer actually left (never blocked by the credit limit). `== total` → 400
       "nothing to record"; `< total` → order `PENDIENTE`, `paid = 0`, payment row only if `> 0`, walk-in rejected
-      (R9), rejected when the note has a `TIMBRADA` invoice (X3: a PUE invoice can't sit on an unpaid note; the order
-      starts paid, so it can be invoiced before delivery), `overLimit = debt > limit` + `warn` log (R13); `> total` → a
+      (R9), allowed even when the note has a `TIMBRADA` invoice (X3 was removed: an order invoiced at creation can be
+      left with a balance), `overLimit = debt > limit` + `warn` log (R13); `> total` → a
       row for the note's whole total ("Cobro en entrega del pedido #X", same method/employee/`clientRequestId`) goes in
       first, so a second collection of that order fails the "no payments" precondition, then the surplus is applied
       oldest-first and the rest is change. `appliedPayments` lists the note's own row first in both cases. A collected
@@ -558,7 +587,8 @@ to its total (settled by payments, or collected with a surplus).
     - X2: the note is recomputed with `applyPaymentState` (balance 0 → `paid = 1` + `ACTIVO`, > 0 → `paid = 0` +
       `PENDIENTE`; cancelling a surplus note's own row reopens it for its total). The customer debt is adjusted by the
       note's balance change rather than re-read; `overLimit` + `warn` log as in collections
-    - X3: rejected when the note has a `TIMBRADA` invoice ("Cancela primero la factura")
+    - X3 (removed): a `TIMBRADA` invoice on the note no longer blocks modifying or cancelling its payments; the
+      account service doesn't read invoices at all
     - X4: a `CANCELADO` order can't have active payments (R14), so it's never reached
     - Response: the same `PaymentResultDto` as collections, `change = 0`; `appliedPayments` = the modified payment, or
       empty on cancel
@@ -570,8 +600,8 @@ to its total (settled by payments, or collected with a surplus).
   back-reference) — one query, no N+1; the global search has optional `(:x IS NULL OR …)` filters and an explicit
   `countQuery`
 - **Payment flags**: each `PaymentDetailDto` carries `status`, `modified` (has a `MODIFICADO` row; one
-  `findModifiedPaymentIds` query per list) and `editable` (`PaymentEditPolicy.isEditable` for the caller: `APLICADO`,
-  no `TIMBRADA` invoice — one `InvoiceRepository` query per list — and M6), so the frontend never repeats the rules.
+  `findModifiedPaymentIds` query per list) and `editable` (`PaymentEditPolicy.isEditable` for the caller: `APLICADO`
+  and M6; a stamped invoice doesn't matter), so the frontend never repeats the rules.
   The account statement lists only active payments; `GET /api/sales/{saleId}/payments` lists both
 - **Concurrency**: every operation that applies, modifies or cancels payments, or checks credit, first locks the
   customer row (`CustomerRepository.findByIdForUpdate`, explicit `@Query` + `@Lock(PESSIMISTIC_WRITE)` — `ForUpdate`
@@ -606,8 +636,9 @@ to its total (settled by payments, or collected with a surplus).
       plus `Pageable`; newest first)
     - No body carries an `employeeId`: the employee is the authenticated user (E1)
 - **Out of scope (later phases)**: balance on the printed ticket, per-driver cash count, receivables in the Dashboard
-  (Q12/Q13 still use `paid = false`, so they count `CANCELADO` and full totals; Q6 counts only `ACTIVO`), invoicing
-  partially paid notes (only paid notes are invoiced), returning orders with active payments, Flyway
+  (Q12/Q13 still use `paid = false`, so they count `CANCELADO` and full totals; Q6 counts only `ACTIVO`), PPD invoices
+  with complementos de pago for notes with a balance (they're stamped `PUE` today), returning orders with active
+  payments, Flyway
 
 ### Object Storage (Cloudflare R2)
 

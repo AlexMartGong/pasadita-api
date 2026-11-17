@@ -23,12 +23,15 @@ import com.pasadita.api.repositories.SaleDetailRepository;
 import com.pasadita.api.repositories.SalePaymentRepository;
 import com.pasadita.api.repositories.SaleRepository;
 import com.pasadita.api.services.account.CustomerAccountService;
+import com.pasadita.api.services.invoice.InvoiceService;
 import com.pasadita.api.services.saledetail.SaleDetailService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -39,8 +42,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -58,6 +63,8 @@ class SaleServiceImplTest {
     @Mock private SaleDetailRepository saleDetailRepository;
     @Mock private SalePaymentRepository salePaymentRepository;
     @Mock private CustomerAccountService customerAccountService;
+    @Mock private InvoiceService invoiceService;
+    @Mock private PlatformTransactionManager transactionManager;
 
     private SaleServiceImpl service;
 
@@ -66,7 +73,7 @@ class SaleServiceImplTest {
         service = new SaleServiceImpl(saleRepository, employeeRepository, customerRepository,
                 paymentMethodRepository, productRepository, deliveryOrderRepository,
                 saleMapper, deliveryOrderMapper, saleDetailService, saleDetailRepository,
-                salePaymentRepository, customerAccountService);
+                salePaymentRepository, customerAccountService, invoiceService, transactionManager);
     }
 
     private SaleCreateDto saveSaleWithSingleDetail(String unitPrice, BigDecimal requestedUnitDiscount, String quantity) {
@@ -217,12 +224,66 @@ class SaleServiceImplTest {
     }
 
     @Test
-    void changeStatusIsRejectedOnSaleWithDeliveryOrder() {
-        when(saleRepository.findById(7L)).thenReturn(Optional.of(Sale.builder().id(7L).paid(true).build()));
+    void changeStatusIsRejectedOnSaleWithDeliveryOrderBeforeTouchingItsInvoice() {
+        when(saleRepository.existsById(7L)).thenReturn(true);
         when(deliveryOrderRepository.existsBySaleId(7L)).thenReturn(true);
 
         assertThatThrownBy(() -> service.changeStatus(7L, new SaleChangeStatusDto(false)))
                 .isInstanceOf(BusinessRuleException.class);
+        verifyNoInteractions(invoiceService);
+        verify(saleRepository, never()).save(any());
+    }
+
+    @Test
+    void deactivatingASaleCancelsItsInvoiceBeforeTheWriteTransaction() {
+        Sale sale = Sale.builder().id(7L).paid(true).build();
+        when(saleRepository.existsById(7L)).thenReturn(true);
+        when(saleRepository.findById(7L)).thenReturn(Optional.of(sale));
+        when(saleRepository.save(sale)).thenReturn(sale);
+
+        service.changeStatus(7L, new SaleChangeStatusDto(false));
+
+        InOrder order = inOrder(invoiceService, transactionManager, saleRepository);
+        order.verify(invoiceService).cancelInvoiceOfCancelledSale(7L);
+        order.verify(transactionManager).getTransaction(any());
+        order.verify(saleRepository).save(sale);
+        assertThat(sale.getPaid()).isFalse();
+    }
+
+    @Test
+    void reactivatingASaleLeavesItsInvoiceAlone() {
+        Sale sale = Sale.builder().id(7L).paid(false).build();
+        when(saleRepository.existsById(7L)).thenReturn(true);
+        when(saleRepository.findById(7L)).thenReturn(Optional.of(sale));
+        when(saleRepository.save(sale)).thenReturn(sale);
+
+        service.changeStatus(7L, new SaleChangeStatusDto(true));
+
+        verifyNoInteractions(invoiceService);
+        assertThat(sale.getPaid()).isTrue();
+    }
+
+    @Test
+    void orderCreatedWhileTheInvoiceIsCancelledStopsTheWrite() {
+        when(saleRepository.existsById(7L)).thenReturn(true);
+        when(deliveryOrderRepository.existsBySaleId(7L)).thenReturn(false, true);
+
+        assertThatThrownBy(() -> service.changeStatus(7L, new SaleChangeStatusDto(false)))
+                .isInstanceOf(BusinessRuleException.class);
+        verify(invoiceService).cancelInvoiceOfCancelledSale(7L);
+        verify(saleRepository, never()).save(any());
+    }
+
+    // Strict: an invoice Facturapi couldn't cancel keeps the sale paid
+    @Test
+    void facturapiFailureLeavesTheSaleAsItWas() {
+        when(saleRepository.existsById(7L)).thenReturn(true);
+        doThrow(new BusinessRuleException("Facturapi rechazó cancelación (HTTP 400)"))
+                .when(invoiceService).cancelInvoiceOfCancelledSale(7L);
+
+        assertThatThrownBy(() -> service.changeStatus(7L, new SaleChangeStatusDto(false)))
+                .isInstanceOf(BusinessRuleException.class);
+        verifyNoInteractions(transactionManager);
         verify(saleRepository, never()).save(any());
     }
 

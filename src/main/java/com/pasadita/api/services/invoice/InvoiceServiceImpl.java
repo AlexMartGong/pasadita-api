@@ -10,10 +10,12 @@ import com.pasadita.api.entities.PaymentMethod;
 import com.pasadita.api.entities.Product;
 import com.pasadita.api.entities.Sale;
 import com.pasadita.api.entities.SaleDetail;
+import com.pasadita.api.enums.delivery.DeliveryStatus;
 import com.pasadita.api.enums.invoice.InvoiceStatus;
 import com.pasadita.api.exceptions.BusinessRuleException;
 import com.pasadita.api.exceptions.EntityNotFoundException;
 import com.pasadita.api.repositories.CustomerFiscalDataRepository;
+import com.pasadita.api.repositories.DeliveryOrderRepository;
 import com.pasadita.api.repositories.InvoiceRepository;
 import com.pasadita.api.repositories.SaleRepository;
 import com.pasadita.api.utils.DateTimeUtils;
@@ -62,6 +64,7 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     private final InvoiceRepository invoiceRepository;
     private final SaleRepository saleRepository;
+    private final DeliveryOrderRepository deliveryOrderRepository;
     private final CustomerFiscalDataRepository fiscalDataRepository;
     private final InvoiceMapper invoiceMapper;
     private final InvoiceErrorPersister invoiceErrorPersister;
@@ -72,6 +75,7 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     public InvoiceServiceImpl(InvoiceRepository invoiceRepository,
                               SaleRepository saleRepository,
+                              DeliveryOrderRepository deliveryOrderRepository,
                               CustomerFiscalDataRepository fiscalDataRepository,
                               InvoiceMapper invoiceMapper,
                               InvoiceErrorPersister invoiceErrorPersister,
@@ -81,6 +85,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                               @Value("${facturapi.key:}") String facturapiSecret) {
         this.invoiceRepository = invoiceRepository;
         this.saleRepository = saleRepository;
+        this.deliveryOrderRepository = deliveryOrderRepository;
         this.fiscalDataRepository = fiscalDataRepository;
         this.invoiceMapper = invoiceMapper;
         this.invoiceErrorPersister = invoiceErrorPersister;
@@ -93,7 +98,9 @@ public class InvoiceServiceImpl implements InvoiceService {
     @Override
     @Transactional
     public Optional<InvoiceResponseDto> createInvoiceRequest(InvoiceCreateDto dto) {
-        Sale sale = loadAndValidatePaidSale(dto.getSaleId());
+        Sale sale = saleRepository.findById(dto.getSaleId())
+                .orElseThrow(() -> new EntityNotFoundException("Sale not found with id: " + dto.getSaleId()));
+        assertInvoiceable(sale);
         CustomerFiscalData fiscalData = loadAndValidateFiscalData(dto.getFiscalId());
 
         Invoice saved = findOrCreatePendingInvoice(dto, sale, fiscalData);
@@ -114,10 +121,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     public Optional<InvoiceResponseDto> timbrarInvoice(InvoiceCreateDto dto) {
         Sale sale = saleRepository.findWithDetailsById(dto.getSaleId())
                 .orElseThrow(() -> new EntityNotFoundException("Sale not found with id: " + dto.getSaleId()));
-
-        if (Boolean.FALSE.equals(sale.getPaid())) {
-            throw new BusinessRuleException("Cannot invoice an unpaid sale");
-        }
+        assertInvoiceable(sale);
 
         CustomerFiscalData fiscalData = loadAndValidateFiscalData(dto.getFiscalId());
         validateSatCatalogData(sale);
@@ -186,6 +190,21 @@ public class InvoiceServiceImpl implements InvoiceService {
         invoice.setStatus(InvoiceStatus.CANCELADA);
         Invoice persisted = invoiceRepository.save(invoice);
         return invoiceMapper.toResponseDto(reattachAssociations(persisted, sale, fiscalData));
+    }
+
+    // Not @Transactional: a TIMBRADA invoice is cancelled at Facturapi (motive 02) without holding a DB
+    // connection, and a Facturapi failure propagates so the caller leaves the sale or order as it was.
+    // A row never stamped at SAT (PENDIENTE/ERROR) is only closed locally.
+    @Override
+    public void cancelInvoiceOfCancelledSale(Long saleId) {
+        invoiceRepository.findBySaleId(saleId).ifPresent(invoice -> {
+            if (invoice.getStatus() == InvoiceStatus.TIMBRADA) {
+                cancelInvoice(invoice.getInvoiceId(), DEFAULT_CANCEL_MOTIVE);
+            } else if (invoice.getStatus() != InvoiceStatus.CANCELADA) {
+                invoice.setStatus(InvoiceStatus.CANCELADA);
+                invoiceRepository.save(invoice);
+            }
+        });
     }
 
     // Not @Transactional: only one repository read, then a remote HTTP call that must not hold
@@ -269,13 +288,14 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
     }
 
-    private Sale loadAndValidatePaidSale(Long saleId) {
-        Sale sale = saleRepository.findById(saleId)
-                .orElseThrow(() -> new EntityNotFoundException("Sale not found with id: " + saleId));
-        if (Boolean.FALSE.equals(sale.getPaid())) {
-            throw new BusinessRuleException("Cannot invoice an unpaid sale");
+    // Paid sales, and delivery notes left with a balance (order PENDIENTE). A cancelled order or a
+    // deactivated sale is unpaid without a PENDIENTE order, so it stays rejected
+    private void assertInvoiceable(Sale sale) {
+        if (Boolean.FALSE.equals(sale.getPaid())
+                && !deliveryOrderRepository.existsBySaleIdAndStatus(sale.getId(), DeliveryStatus.PENDIENTE)) {
+            throw new BusinessRuleException("Cannot invoice an unpaid sale (only paid sales or PENDIENTE delivery "
+                    + "orders)");
         }
-        return sale;
     }
 
     private CustomerFiscalData loadAndValidateFiscalData(Long fiscalId) {

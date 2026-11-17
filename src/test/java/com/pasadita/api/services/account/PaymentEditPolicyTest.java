@@ -38,7 +38,7 @@ class PaymentEditPolicyTest {
     void adminCanEditAnyActivePaymentOfAnyDay() {
         SalePayment oldPaymentOfSomeoneElse = paymentBy(otherEmployee, NOW_UTC.minusDays(30));
 
-        assertThat(policy.isEditable(oldPaymentOfSomeoneElse, owner, true, false)).isTrue();
+        assertThat(policy.isEditable(oldPaymentOfSomeoneElse, owner, true)).isTrue();
         assertThatCode(() -> policy.assertCanModify(oldPaymentOfSomeoneElse, owner, true)).doesNotThrowAnyException();
     }
 
@@ -47,7 +47,7 @@ class PaymentEditPolicyTest {
         // 06:30 UTC is 00:30 of the same day in Mexico
         SalePayment payment = paymentBy(owner, LocalDateTime.of(2026, 10, 27, 6, 30));
 
-        assertThat(policy.isEditable(payment, owner, false, false)).isTrue();
+        assertThat(policy.isEditable(payment, owner, false)).isTrue();
         assertThatCode(() -> policy.assertCanModify(payment, owner, false)).doesNotThrowAnyException();
     }
 
@@ -56,7 +56,7 @@ class PaymentEditPolicyTest {
         // 05:30 UTC on the 27th is 23:30 of the 26th in Mexico
         SalePayment payment = paymentBy(owner, LocalDateTime.of(2026, 10, 27, 5, 30));
 
-        assertThat(policy.isEditable(payment, owner, false, false)).isFalse();
+        assertThat(policy.isEditable(payment, owner, false)).isFalse();
         assertThatThrownBy(() -> policy.assertCanModify(payment, owner, false))
                 .isInstanceOf(BusinessRuleException.class)
                 .hasMessage("Solo puedes modificar tus abonos del día. Pide al administrador que lo corrija.");
@@ -66,18 +66,17 @@ class PaymentEditPolicyTest {
     void anotherEmployeeCannotEditThePaymentEvenOnTheSameDay() {
         SalePayment payment = paymentBy(owner, NOW_UTC);
 
-        assertThat(policy.isEditable(payment, otherEmployee, false, false)).isFalse();
+        assertThat(policy.isEditable(payment, otherEmployee, false)).isFalse();
         assertThatThrownBy(() -> policy.assertCanModify(payment, otherEmployee, false))
                 .isInstanceOf(BusinessRuleException.class);
     }
 
     @Test
-    void cancelledPaymentsAndStampedNotesAreNeverEditable() {
+    void cancelledPaymentsAreNeverEditable() {
         SalePayment cancelled = paymentBy(owner, NOW_UTC);
         cancelled.setStatus(PaymentStatus.CANCELADO);
-        SalePayment active = paymentBy(owner, NOW_UTC);
 
-        assertThat(policy.isEditable(cancelled, owner, true, false)).isFalse();
-        assertThat(policy.isEditable(active, owner, true, true)).isFalse();
+        assertThat(policy.isEditable(cancelled, owner, true)).isFalse();
+        assertThat(policy.isEditable(cancelled, owner, false)).isFalse();
     }
 }

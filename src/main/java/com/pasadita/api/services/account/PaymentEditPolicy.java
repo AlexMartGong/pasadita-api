@@ -14,8 +14,8 @@ import java.util.Objects;
 
 /**
  * Who may modify a payment (M6): an ADMIN any payment, any day; CAJERO and PEDIDOS only the payments they recorded
- * themselves on the same Mexico day. {@link #isEditable} adds the status (M3) and stamped-invoice (X3) rules, so the
- * frontend gets one flag instead of repeating them.
+ * themselves on the same Mexico day. {@link #isEditable} adds the status rule (M3), so the frontend gets one flag
+ * instead of repeating them. A stamped invoice on the note doesn't freeze its payments.
  */
 @Component
 @RequiredArgsConstructor
@@ -23,9 +23,8 @@ public class PaymentEditPolicy {
 
     private final Clock clock;
 
-    public boolean isEditable(SalePayment payment, Employee actorEmployee, boolean admin, boolean invoiceStamped) {
+    public boolean isEditable(SalePayment payment, Employee actorEmployee, boolean admin) {
         return payment.getStatus() == PaymentStatus.APLICADO
-                && !invoiceStamped
                 && isOwnerSameDayOrAdmin(payment, actorEmployee, admin);
     }
 
