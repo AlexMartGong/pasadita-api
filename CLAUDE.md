@@ -305,7 +305,9 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
   `editable` matrix with a fixed `Clock`), `PaymentHistoryServiceImplTest` (Mexico dates → UTC range with exclusive
   end, `from > to`, unknown payment),
   `DeliveryOrderServiceImplTest` (manual status only to `CANCELADO`, R14 cancel with active payments / only cancelled
-  ones, `hasPayments` + PENDIENTE-only balance from one aggregate, R1 unpaid sale, credit check with the caller role),
+  ones, `hasPayments` + PENDIENTE-only balance from one aggregate, the delivery list: `PENDIENTE` orders of earlier
+  days listed with `requestedToday = false` and left out of `totalOrders`/`totalAmount`, the query bounds = Mexico's
+  day in UTC, the flag on single-order answers; R1 unpaid sale, credit check with the caller role),
   `SalePaymentControllerTest` / `CustomerAccountControllerTest` (the `PaymentActor` comes from the `Authentication`),
   `PrinterWebSocketHandlerTest`
   (late close of a replaced session keeps the new one, closing the current session removes it, replacement closes the
@@ -317,6 +319,11 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
 - Validation and error-mapping tests (no Spring Boot context): `SaleDetailValidationTest` (entity `quantity` bounds as Hibernate
   checks them at persist time) and `GlobalExceptionHandlerTest` (`ConstraintViolationException` → `400`; an
   `AuthorizationDeniedException` → `403` through a standalone `MockMvc`, so the advice's handler resolution is exercised)
+- Role tests: `CustomerEndpointsAuthorizationTest` runs `CustomerAccountController` and `CustomerController` behind
+  real method security (`@SpringJUnitConfig` + `@EnableMethodSecurity`, mocked services, no Boot context or
+  database): the debts list and the customer list for the three roles, credit limit and customer writes denied to
+  CAJERO/PEDIDOS. The Mockito controller tests call the controller directly and never evaluate `@PreAuthorize`, so
+  a role rule needs a test like this one
 - `PasaditaApiApplicationTests.contextLoads` needs the MySQL from `application.properties` (localhost:3306); the
   Mockito suites run without it
 - Spring Security Test support available
@@ -398,6 +405,16 @@ Current domains include:
       `sales.paid = 1`; both paths run the R12 credit check (see Customer account)
     - `PUT /api/delivery-orders/change-status/{id}` only accepts `CANCELADO` (R8) and rejects orders whose note has
       active payments (R14); cancelling still sets `sales.paid = 0`
+    - **Delivery list** (`GET /api/delivery-orders/all` → `DeliveryOrderServiceImpl.findAll`): the orders requested
+      during Mexico's current day **plus every `PENDIENTE` order of any earlier day**, so a balance stays listed
+      (with its `balance`/`hasPayments`) until it is settled; those are also all the pending notes the collections
+      screens need, there is no separate endpoint. One query,
+      `DeliveryOrderRepository.findRequestedBetweenOrWithStatus` (`@EntityGraph` `sale` + `sale.customer`, ordered by
+      `requestDate, id`), plus the payments aggregate. Each order carries `customerId` and `requestedToday`, computed
+      from the same UTC day range as the query (`DayRange` in the service) on every `DeliveryOrderResponseDto`,
+      single-order answers included, because the frontend merges those into its list. The frontend must use
+      `requestedToday` for the day's figures (sold / receivable / collected today) and the whole list for the
+      accumulated receivable. `totalOrders` and `totalAmount` of the summary count only today's orders
     - `DeliveryOrderResponseDto.balance` = total − active payments for `PENDIENTE` orders (0 otherwise) and
       `hasPayments` = the note has active payments (whatever the order status, e.g. an `ACTIVO` order settled by
       payments), both from
@@ -575,10 +592,13 @@ to its total (settled by payments, or collected with a surplus).
   apply the surplus again
 - **Endpoints**:
     - `CustomerAccountController` (`@RequestMapping("/api")`): `POST /api/delivery-orders/{orderId}/collection`,
-      `POST /api/customers/{customerId}/payments`, `GET /api/customers/{customerId}/account` and
+      `POST /api/customers/{customerId}/payments`, `GET /api/customers/{customerId}/account`,
+      `GET /api/customers/debts` (cashiers and delivery staff need the balances to record payments) and
       `GET /api/sales/{saleId}/payments` (note payments, active and cancelled, with flags)
-      (`ROLE_ADMIN`/`ROLE_CAJERO`/`ROLE_PEDIDOS`); `POST /api/sales/{saleId}/payments`, `GET /api/customers/debts`,
-      `PATCH /api/customers/{customerId}/credit-limit` (`ROLE_ADMIN`)
+      (`ROLE_ADMIN`/`ROLE_CAJERO`/`ROLE_PEDIDOS`); `POST /api/sales/{saleId}/payments` and
+      `PATCH /api/customers/{customerId}/credit-limit` (`ROLE_ADMIN`). Customer writes in `CustomerController`
+      (`save`, `update`, `change-status`) are `ROLE_ADMIN` too; its only read, `GET /api/customers/all`, is open to
+      the three roles
     - `SalePaymentController` (`/api/sale-payments`): `PUT /{paymentId}` (modify, body `amount`/`paymentMethodId`/
       `reason`) and `GET /{paymentId}/history` (`ROLE_ADMIN`/`ROLE_CAJERO`/`ROLE_PEDIDOS`); `PUT /{paymentId}/cancel`
       (body `reason`) and `GET /history` (`ROLE_ADMIN`; optional `from`/`to` Mexico dates `yyyy-MM-dd`, both

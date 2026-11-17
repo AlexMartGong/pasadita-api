@@ -267,7 +267,7 @@ POST   /api/sales/open-drawer?stationId={stationId} - Open cash drawer at a stat
 ### Delivery Orders
 
 ```
-GET    /api/delivery-orders/all - Get all delivery orders
+GET    /api/delivery-orders/all - Get today's delivery orders plus every PENDIENTE order of earlier days
 POST   /api/delivery-orders/save - Create new delivery order
 PUT    /api/delivery-orders/update/{id} - Update delivery order
 PUT    /api/delivery-orders/change-status/{id} - Change delivery order status
