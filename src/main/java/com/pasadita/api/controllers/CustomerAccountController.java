@@ -80,7 +80,8 @@ public class CustomerAccountController {
         return ResponseEntity.ok(customerAccountService.getAccount(customerId, PaymentActor.from(authentication)));
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    // Open to every role: cashiers and delivery staff need the list of balances to record payments
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CAJERO', 'ROLE_PEDIDOS')")
     @GetMapping("/customers/debts")
     public ResponseEntity<List<CustomerDebtSummaryDto>> getCustomersWithDebt() {
         return ResponseEntity.ok(customerAccountService.findCustomersWithDebt());
