@@ -46,7 +46,8 @@ public class DeliveryOrderMapper {
 
     // paidAmount = active payments (abonos) on the order's note; only a PENDIENTE order carries a balance. Active
     // payments are never below 0.01, so a positive sum means the note has some
-    public DeliveryOrderResponseDto toResponseDto(DeliveryOrder deliveryOrder, BigDecimal paidAmount) {
+    public DeliveryOrderResponseDto toResponseDto(DeliveryOrder deliveryOrder, BigDecimal paidAmount,
+                                                  boolean requestedToday) {
         BigDecimal total = deliveryOrder.getSale() != null ? deliveryOrder.getSale().getTotal() : null;
         BigDecimal balance = deliveryOrder.getStatus() == DeliveryStatus.PENDIENTE && total != null
                 ? total.subtract(paidAmount)
@@ -54,8 +55,10 @@ public class DeliveryOrderMapper {
         return DeliveryOrderResponseDto.builder()
                 .id(deliveryOrder.getId())
                 .saleId(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getId() : null)
+                .customerId(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getCustomer().getId() : null)
                 .customerName(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getCustomer().getName() : null)
                 .requestDate(DateTimeUtils.toMexicoTime(deliveryOrder.getRequestDate()))
+                .requestedToday(requestedToday)
                 .deliveryAddress(deliveryOrder.getDeliveryAddress())
                 .contactPhone(deliveryOrder.getContactPhone())
                 .paid(deliveryOrder.getSale() != null ? deliveryOrder.getSale().getPaid() : false)

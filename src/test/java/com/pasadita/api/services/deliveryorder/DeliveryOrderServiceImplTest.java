@@ -4,6 +4,7 @@ import com.pasadita.api.dto.deliveryorder.DeliveryOrderChangeStatusDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderCreateDto;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderMapper;
 import com.pasadita.api.dto.deliveryorder.DeliveryOrderResponseDto;
+import com.pasadita.api.dto.deliveryorder.DeliveryOrderSummaryDto;
 import com.pasadita.api.dto.account.SalePaidAmount;
 import com.pasadita.api.entities.Customer;
 import com.pasadita.api.entities.DeliveryOrder;
@@ -18,15 +19,20 @@ import com.pasadita.api.repositories.EmployeeRepository;
 import com.pasadita.api.repositories.SalePaymentRepository;
 import com.pasadita.api.repositories.SaleRepository;
 import com.pasadita.api.services.account.CustomerAccountService;
+import com.pasadita.api.utils.DateTimeUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -35,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -64,10 +71,15 @@ class DeliveryOrderServiceImplTest {
     }
 
     private static DeliveryOrder order(long orderId, long saleId, String total, DeliveryStatus status) {
+        return order(orderId, saleId, total, status, DateTimeUtils.nowUtc());
+    }
+
+    private static DeliveryOrder order(long orderId, long saleId, String total, DeliveryStatus status,
+                                       LocalDateTime requestDate) {
         Customer customer = Customer.builder().id(20L).name("Clienta").build();
         Sale sale = Sale.builder().id(saleId).customer(customer).total(new BigDecimal(total))
                 .paid(status == DeliveryStatus.ACTIVO).build();
-        return DeliveryOrder.builder().id(orderId).sale(sale).status(status).build();
+        return DeliveryOrder.builder().id(orderId).sale(sale).status(status).requestDate(requestDate).build();
     }
 
     @ParameterizedTest
@@ -109,7 +121,73 @@ class DeliveryOrderServiceImplTest {
         assertThat(response).hasValueSatisfying(dto -> {
             assertThat(dto.getStatus()).isEqualTo(DeliveryStatus.CANCELADO);
             assertThat(dto.getBalance()).isEqualByComparingTo("0");
+            assertThat(dto.isRequestedToday()).isTrue();
         });
+    }
+
+    // The frontend merges single-order answers into the delivery list, so they carry the same flag as the list
+    @Test
+    void cancellingAnOrderFromAnEarlierDayAnswersThatItIsNotTodays() {
+        DeliveryOrder deliveryOrder = order(200L, 50L, "700.00", DeliveryStatus.PENDIENTE,
+                DateTimeUtils.nowUtc().minusDays(2));
+        when(deliveryOrderRepository.findWithSaleById(200L)).thenReturn(Optional.of(deliveryOrder));
+        when(deliveryOrderRepository.save(deliveryOrder)).thenReturn(deliveryOrder);
+
+        Optional<DeliveryOrderResponseDto> response =
+                service.changeStatus(200L, new DeliveryOrderChangeStatusDto(DeliveryStatus.CANCELADO));
+
+        assertThat(response).hasValueSatisfying(dto -> assertThat(dto.isRequestedToday()).isFalse());
+    }
+
+    // A balance left on an earlier day used to vanish from the delivery list, and its amount with it
+    @Test
+    void pendingOrdersFromEarlierDaysAreListedWithTheirBalanceButStayOutOfTheDaysFigures() {
+        LocalDateTime now = DateTimeUtils.nowUtc();
+        DeliveryOrder pendingLastWeek = order(190L, 40L, "390.00", DeliveryStatus.PENDIENTE, now.minusDays(7));
+        DeliveryOrder pendingTwoDaysAgo = order(195L, 45L, "500.00", DeliveryStatus.PENDIENTE, now.minusDays(2));
+        DeliveryOrder paidToday = order(203L, 53L, "250.00", DeliveryStatus.ACTIVO, now);
+        DeliveryOrder pendingToday = order(204L, 54L, "700.00", DeliveryStatus.PENDIENTE, now);
+        when(deliveryOrderRepository.findRequestedBetweenOrWithStatus(any(), any(), eq(DeliveryStatus.PENDIENTE)))
+                .thenReturn(List.of(pendingLastWeek, pendingTwoDaysAgo, paidToday, pendingToday));
+        when(salePaymentRepository.sumActiveAmountsBySaleIds(List.of(40L, 45L, 53L, 54L))).thenReturn(List.of(
+                new SalePaidAmount(45L, new BigDecimal("100.00")), new SalePaidAmount(54L, new BigDecimal("300.00"))));
+
+        DeliveryOrderSummaryDto summary = service.findAll();
+
+        List<DeliveryOrderResponseDto> orders = summary.getOrders();
+        assertThat(orders).extracting(DeliveryOrderResponseDto::getId).containsExactly(190L, 195L, 203L, 204L);
+        assertThat(orders).extracting(DeliveryOrderResponseDto::isRequestedToday)
+                .containsExactly(false, false, true, true);
+        assertThat(orders).extracting(DeliveryOrderResponseDto::getBalance)
+                .usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(new BigDecimal("390.00"), new BigDecimal("400.00"), BigDecimal.ZERO,
+                        new BigDecimal("400.00"));
+        assertThat(orders).extracting(DeliveryOrderResponseDto::isHasPayments)
+                .containsExactly(false, true, false, true);
+        assertThat(orders).extracting(DeliveryOrderResponseDto::getCustomerId).containsOnly(20L);
+        // Only today's two orders count, and only the paid one adds to the amount
+        assertThat(summary.getTotalOrders()).isEqualTo(2);
+        assertThat(summary.getTotalAmount()).isEqualByComparingTo("250.00");
+        // One aggregate of payments for the whole list, whatever the day of each order
+        verify(salePaymentRepository).sumActiveAmountsBySaleIds(any());
+    }
+
+    @Test
+    void theListAsksForMexicosCurrentDayInUtcPlusEveryPendingOrder() {
+        when(deliveryOrderRepository.findRequestedBetweenOrWithStatus(any(), any(), any())).thenReturn(List.of());
+        LocalDate dayBeforeTheCall = DateTimeUtils.nowMexico().toLocalDate();
+
+        service.findAll();
+
+        LocalDate dayAfterTheCall = DateTimeUtils.nowMexico().toLocalDate();
+        ArgumentCaptor<LocalDateTime> startOfDay = ArgumentCaptor.forClass(LocalDateTime.class);
+        ArgumentCaptor<LocalDateTime> endOfDay = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(deliveryOrderRepository).findRequestedBetweenOrWithStatus(startOfDay.capture(), endOfDay.capture(),
+                eq(DeliveryStatus.PENDIENTE));
+        LocalDateTime startInMexico = DateTimeUtils.toMexicoTime(startOfDay.getValue());
+        assertThat(startInMexico.toLocalTime()).isEqualTo(LocalTime.MIDNIGHT);
+        assertThat(startInMexico.toLocalDate()).isBetween(dayBeforeTheCall, dayAfterTheCall);
+        assertThat(DateTimeUtils.toMexicoTime(endOfDay.getValue())).isEqualTo(startInMexico.plusDays(1));
     }
 
     @Test
@@ -117,7 +195,7 @@ class DeliveryOrderServiceImplTest {
         DeliveryOrder settledByPayments = order(201L, 51L, "390.00", DeliveryStatus.ACTIVO);
         DeliveryOrder pending = order(202L, 52L, "700.00", DeliveryStatus.PENDIENTE);
         DeliveryOrder paidAtDelivery = order(203L, 53L, "250.00", DeliveryStatus.ACTIVO);
-        when(deliveryOrderRepository.findByRequestDateBetween(any(), any()))
+        when(deliveryOrderRepository.findRequestedBetweenOrWithStatus(any(), any(), eq(DeliveryStatus.PENDIENTE)))
                 .thenReturn(List.of(settledByPayments, pending, paidAtDelivery));
         when(salePaymentRepository.sumActiveAmountsBySaleIds(List.of(51L, 52L, 53L))).thenReturn(List.of(
                 new SalePaidAmount(51L, new BigDecimal("390.00")), new SalePaidAmount(52L, new BigDecimal("300.00"))));
