@@ -195,10 +195,12 @@ com.pasadita.api/
 - **Production** (`application-prod.properties`): Uses environment variables (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
   `JWT_SECRET`, `JWT_EXPIRATION`, `CORS_ALLOWED_ORIGINS`, `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`,
   `FACTURAPI_KEY`, `R2_ACCESS_KEY`,
-  `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`, optional `WALK_IN_CUSTOMER_ID`), Hibernate
+  `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`, optional `WALK_IN_CUSTOMER_ID` and `EMISOR_*`), Hibernate
   `ddl-auto=validate`, HikariCP pool (max 10),
   error-detail hardening via `spring.web.error.include-*=never` (Boot 4 key; the old `server.error.*` is ignored)
-- **Facturación (CFDI)**: `facturacion.emisor.*` (rfc, razon-social, regimen-fiscal, codigo-postal) and
+- **Facturación (CFDI)**: `facturacion.emisor.*` (rfc, razon-social, regimen-fiscal, codigo-postal; env `EMISOR_RFC`,
+  `EMISOR_RAZON_SOCIAL`, `EMISOR_REGIMEN_FISCAL`, `EMISOR_CODIGO_POSTAL` — only `regimen-fiscal` is read by the code,
+  default `626` = production's; the rest default to empty and real values are never committed) and
   `facturacion.csd.*` (cer-path, key-path, password) are bound to `FacturacionProperties` (under `config/`).
   `facturapi.key` (env `FACTURAPI_KEY`) is the Facturapi secret bearer token; `FacturapiConfig` exposes both the
   `Facturapi` SDK bean (`io.facturapi:facturapi-java` 2.2.0; no service consumes it today — every Facturapi call goes
@@ -221,7 +223,8 @@ com.pasadita.api/
 
 ### Security Considerations
 
-- JWT secret is configured in `application.properties` (change for production)
+- JWT secret comes from `JWT_SECRET`: required in production (no default in `application-prod.properties`); the base
+  `application.properties` fallback is a readable dev/test placeholder (valid base64), not a secret
 - Token expiration set to 24 hours (86400000ms)
 - All endpoints require authentication except OPTIONS requests
 - Admin role required for employee management endpoints
