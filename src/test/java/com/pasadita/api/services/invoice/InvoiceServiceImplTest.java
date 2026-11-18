@@ -66,7 +66,7 @@ class InvoiceServiceImplTest {
 
     private final FacturacionProperties facturacionProperties = new FacturacionProperties(
             new FacturacionProperties.Emisor(
-                    "MAMA7908077K3", "ALEJANDRO MARTINEZ MARTINEZ", "626", "46400"),
+                    "AAA010101AAA", "EMISOR DE PRUEBA", "626", "01000"),
             new FacturacionProperties.Csd(null, null, null));
 
     private InvoiceServiceImpl service;

@@ -137,9 +137,10 @@ Production (`application-prod.properties`) reads all secrets from environment va
 - **JWT**: `JWT_SECRET`, `JWT_EXPIRATION`
 - **CORS**: `CORS_ALLOWED_ORIGINS`
 - **CFDI / Facturapi**: `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`, `FACTURAPI_KEY`
+- **CFDI issuer** (optional, not secrets): `EMISOR_RFC`, `EMISOR_RAZON_SOCIAL`, `EMISOR_REGIMEN_FISCAL` (default `626`), `EMISOR_CODIGO_POSTAL` — Facturapi takes the issuer from the organization behind `FACTURAPI_KEY`
 - **Cloudflare R2**: `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`
 
-Dev `application.properties` ships dummy fallback defaults for the CSD, Facturapi, and R2 variables, so local runs and tests start without real secrets.
+Dev `application.properties` ships dummy fallback defaults for the CSD, Facturapi, and R2 variables, plus a readable placeholder for `JWT_SECRET`, so local runs and tests start without real secrets.
 
 ### Server Configuration
 
