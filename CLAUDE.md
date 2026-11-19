@@ -642,7 +642,9 @@ The application includes WebSocket support for real-time printer connections:
   throws `SessionLimitExceededException` and closes the session with `SESSION_NOT_RELIABLE`
 - **Session identity rule** (fixes the "ticket and drawer both dead until the cashier PC reboots" incident): the
   `stations` map is keyed by `stationId`, but an entry is only ever removed **if it still points to the session being
-  closed** — `removeIfCurrent(stationId, sessionId)`, an atomic `computeIfPresent` comparing ids. Comparing ids works
+  closed** — `removeIfCurrent(stationId, sessionId)`: `get`, compare ids, then the atomic conditional `remove(stationId, current)`
+  (fails if the entry was replaced in between; never `computeIfPresent`, whose discarded `WebSocketSession` return
+  Qodana flags as an unclosed `AutoCloseable`). Comparing ids works
   even though the map holds the decorator: `ConcurrentWebSocketSessionDecorator.getId()` delegates to the raw session
   that Spring passes to `afterConnectionClosed`/`handleTransportError`. Before this rule, a replaced session whose
   close arrived late (agent reconnects as B, proxy detects A's death afterwards) ran `remove(stationId)` and dropped B:

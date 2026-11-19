@@ -70,15 +70,16 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final FacturacionProperties facturacionProperties;
     private final String facturapiSecret;
 
-    public InvoiceServiceImpl(InvoiceRepository invoiceRepository,
-                              SaleRepository saleRepository,
-                              CustomerFiscalDataRepository fiscalDataRepository,
-                              InvoiceMapper invoiceMapper,
-                              InvoiceErrorPersister invoiceErrorPersister,
-                              HttpClient httpClient,
-                              JsonMapper objectMapper,
-                              FacturacionProperties facturacionProperties,
-                              @Value("${facturapi.key:}") String facturapiSecret) {
+    // Package-private like InvoiceErrorPersister, an internal REQUIRES_NEW helper; Spring calls it via reflection
+    InvoiceServiceImpl(InvoiceRepository invoiceRepository,
+                       SaleRepository saleRepository,
+                       CustomerFiscalDataRepository fiscalDataRepository,
+                       InvoiceMapper invoiceMapper,
+                       InvoiceErrorPersister invoiceErrorPersister,
+                       HttpClient httpClient,
+                       JsonMapper objectMapper,
+                       FacturacionProperties facturacionProperties,
+                       @Value("${facturapi.key:}") String facturapiSecret) {
         this.invoiceRepository = invoiceRepository;
         this.saleRepository = saleRepository;
         this.fiscalDataRepository = fiscalDataRepository;
