@@ -26,7 +26,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Component
@@ -241,15 +240,9 @@ public class PrinterWebSocketHandler extends TextWebSocketHandler {
      * session never drops the session that replaced it.
      */
     private boolean removeIfCurrent(String stationId, String sessionId) {
-        AtomicBoolean removed = new AtomicBoolean(false);
-        stations.computeIfPresent(stationId, (key, current) -> {
-            if (current.getId().equals(sessionId)) {
-                removed.set(true);
-                return null;
-            }
-            return current;
-        });
-        return removed.get();
+        WebSocketSession current = stations.get(stationId);
+        // remove(key, value) is atomic: it fails if the entry was replaced after the get
+        return current != null && current.getId().equals(sessionId) && stations.remove(stationId, current);
     }
 
     private void markAlive(WebSocketSession session) {
