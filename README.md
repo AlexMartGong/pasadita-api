@@ -37,7 +37,7 @@ A comprehensive RESTful API for managing a small business, built with Spring Boo
 
 ## Technology Stack
 
-- **Framework**: Spring Boot 4.1.2 (Spring Framework 7, Spring Security 7, Hibernate 7, Jackson 3)
+- **Framework**: Spring Boot 4.1.3 (Spring Framework 7, Spring Security 7, Hibernate 7, Jackson 3)
 - **Language**: Java 21
 - **Database**: MySQL 8.x
 - **ORM**: Spring Data JPA / Hibernate

@@ -83,12 +83,20 @@ docker compose -f docker-compose.local.yml down -v
   `.env` in the project root, which Docker Compose auto-loads. Copy `.env.example` (committed template with local-only
   dummy values) to `.env` and the stack boots without extra setup. `JWT_SECRET` must be valid base64 (`TokenJwtConfig`
   base64-decodes it).
+- **Base image and JVM flag**: the deploy runs `docker build --pull` on the VPS so a rebuilt `eclipse-temurin` tag
+  (JRE security fixes) is actually picked up; without `--pull` the cached base is reused forever. The `ENTRYPOINT`
+  carries `-XX:-UseBASE64Intrinsics` as a Java4Shell (CVE-2026-114938) stopgap — drop it once the image's
+  `java.runtime.version` is ≥ `21.0.13.1`
+- **MySQL version**: production runs MySQL **8.4.x** (Aiven, TLS required via `useSSL=true&requireSSL=true` in
+  `DB_URL`) and the local compose runs `mysql:8.4` to match. Boot manages Connector/J 26.x, which supports MySQL
+  Server 8.4+ only — never point the app at an 8.0 server. An 8.0-initialized local volume is upgraded in place on
+  the first 8.4 start (one-way); `down -v` re-seeds instead
 
 ## Architecture Overview
 
 ### Technology Stack
 
-- **Framework**: Spring Boot 4.1.2 with Java 21 (Spring Framework 7, Spring Security 7, Hibernate ORM 7, Jackson 3,
+- **Framework**: Spring Boot 4.1.3 with Java 21 (Spring Framework 7, Spring Security 7, Hibernate ORM 7, Jackson 3,
   Tomcat 11, Jakarta EE 11) — see Spring Boot 4 / Jackson 3 Rules
 - **Database**: MySQL with JPA/Hibernate
 - **Security**: JWT-based authentication with Spring Security
