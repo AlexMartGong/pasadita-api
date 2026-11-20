@@ -41,5 +41,5 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd ~/apps/lapasadita-api
-            docker build -t lapasadita-api:prod .
+            docker build --pull -t lapasadita-api:prod .
             docker compose up -d
