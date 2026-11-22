@@ -47,6 +47,21 @@ public class GlobalExceptionHandler {
                 .body(Map.of("error", "You don't have permission to perform this action"));
     }
 
+    // Refresh endpoint: the code lets the frontend tell an expired session from a reuse alarm; both mean "log in again"
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ResponseEntity<Map<String, String>> handleInvalidRefreshToken(InvalidRefreshTokenException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("error", ex.getCode(), "message", ex.getMessage()));
+    }
+
+    // Refresh of a deactivated employee answers like a login of one (JwtAuthenticationFilter.unsuccessfulAuthentication);
+    // without this, the catch-all turned it into a 500
+    @ExceptionHandler(EmployeeInactiveException.class)
+    public ResponseEntity<Map<String, String>> handleEmployeeInactive(EmployeeInactiveException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("message", "Login failed", "error", ex.getMessage()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleGeneral(Exception ex) {
         log.error("Unexpected error: {}", ex.getMessage(), ex);

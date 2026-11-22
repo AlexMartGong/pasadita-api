@@ -65,6 +65,38 @@ create table employees
         unique (username)
 );
 
+-- Refresh tokens (sesiones persistentes): solo el hash SHA-256 del valor opaco, nunca el valor plano.
+-- Fechas en UTC. family_id agrupa las rotaciones de un mismo inicio de sesión (un dispositivo)
+create table refresh_tokens
+(
+    id             bigint auto_increment
+        primary key,
+    employee_id    bigint       not null,
+    token_hash     char(64)     not null,
+    family_id      char(36)     not null,
+    expires_at     datetime     not null,
+    revoked_at     datetime     null,
+    replaced_by_id bigint       null,
+    user_agent     varchar(255) null,
+    created_at     datetime     not null,
+    constraint uk_refresh_tokens_token_hash
+        unique (token_hash),
+    constraint fk_refresh_tokens_employee
+        foreign key (employee_id) references employees (employee_id)
+            on delete cascade,
+    constraint fk_refresh_tokens_replaced_by
+        foreign key (replaced_by_id) references refresh_tokens (id)
+            on delete set null
+) engine = InnoDB
+  default charset = utf8mb4
+  collate = utf8mb4_0900_ai_ci;
+
+create index idx_refresh_tokens_employee
+    on refresh_tokens (employee_id);
+
+create index idx_refresh_tokens_family
+    on refresh_tokens (family_id);
+
 create table paymentmethods
 (
     payment_method_id    bigint auto_increment

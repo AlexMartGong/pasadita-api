@@ -15,6 +15,8 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -28,6 +30,10 @@ import static com.pasadita.api.security.TokenJwtConfig.*;
 
 public class JwtValidationFilter extends BasicAuthenticationFilter {
 
+    // Refresh and logout authenticate with the refresh cookie: an expired access token left in the header must not
+    // turn them into a 401 before they run
+    private static final RequestMatcher SESSION_ENDPOINTS = PathPatternRequestMatcher.withDefaults().matcher("/api/auth/**");
+
     private final JsonMapper objectMapper;
     private final TokenJwtConfig tokenConfig;
 
@@ -37,6 +43,11 @@ public class JwtValidationFilter extends BasicAuthenticationFilter {
         this.objectMapper = JsonMapper.builder()
                 .addMixIn(SimpleGrantedAuthority.class, SimpleGrantedAuthorityJsonCreator.class)
                 .build();
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return SESSION_ENDPOINTS.matches(request);
     }
 
     @Override
