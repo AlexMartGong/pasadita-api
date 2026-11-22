@@ -77,6 +77,8 @@ docker compose -f docker-compose.local.yml down -v
 
 - Two local MySQLs coexist: the compose container on host port **3307** and the host's own MySQL on **3306**.
   `./mvnw spring-boot:run` uses the host DB (3306); the dockerized API uses the container DB (`local-db:3306`).
+  An existing volume or host DB doesn't get new tables by itself: apply `scripts/migrations/` there too (e.g. without
+  `refresh_tokens` every login fails; dev has no `ddl-auto=validate` to catch it at startup)
 - `scriptLP.sql` is mounted as a MySQL init script, so the prod profile's `ddl-auto=validate` passes on a fresh
   volume; it seeds the `admin`/`123456` user (see Data Model Patterns).
 - Secrets in `docker-compose.local.yml` are no longer hardcoded: they're interpolated (`${VAR}`) from a gitignored
@@ -131,8 +133,12 @@ The application follows a standard layered architecture:
   by `SpringSecurityConfig.filterChain`), never a raw `new JsonMapper()`/`JsonMapper.shared()` — raw Jackson 3 binds
   `Employee` through its Lombok all-args constructor and rejects the absent primitive `active`, failing every login.
   Spring Security 7 adds a `FactorGrantedAuthority` (`FACTOR_PASSWORD`, carries an `Instant`) to every
-  authentication; the filter drops it so the JWT `authorities` claim and the login body keep only the role
-  (`[{"authority":"ROLE_ADMIN"}]`) — jjwt's Jackson 2 serializer can't write the `Instant` anyway
+  authentication; it never reaches the JWT `authorities` claim or the login body, which keep only the role
+  (`[{"authority":"ROLE_ADMIN"}]`) — jjwt's Jackson 2 serializer can't write the `Instant` anyway. On success the
+  filter delegates to `AuthSessionService.start` (roles rebuilt from `employee.position`, JWT from the single
+  `JwtTokenProvider`) and adds the refresh cookie — see Refresh Tokens
+- **Persistent sessions**: short access JWT + rotating refresh token in an httpOnly cookie (`POST /api/auth/refresh`,
+  `POST /api/auth/logout`) — see Refresh Tokens
 
 ### Data Model Patterns
 
@@ -151,7 +157,8 @@ The application follows a standard layered architecture:
   `scripts/migrations/` (plain SQL, applied by hand — no Flyway yet), and must be applied in production **before**
   deploying the code that needs them (prod validates the schema at startup). Current:
   `2026-10-abonos.sql` (phases 1 and 1.1: `credit_limit`, `sale_payments` with `status`, `sale_payment_history`;
-  + read-only `2026-10-abonos-conciliacion.sql`)
+  + read-only `2026-10-abonos-conciliacion.sql`) and `2026-11-refresh-tokens.sql` (`refresh_tokens`, idempotent
+  `create table if not exists`; see Rollout oficial)
 
 ## Development Guidelines
 
@@ -161,14 +168,14 @@ The application follows a standard layered architecture:
 com.pasadita.api/
 ├── config/           # WebSocket, CORS, scheduling (SchedulingConfig: @EnableScheduling + Clock), and @ConfigurationProperties (e.g., FacturacionProperties, R2Properties, SalesProperties); S3Config exposes the S3Client bean
 ├── controllers/      # REST endpoints by domain
-├── dto/              # DTOs organized by domain (customer, employee, product, sale, saledetail, deliveryorder, dashboard, ticket, fiscal, invoice, account)
+├── dto/              # DTOs organized by domain (customer, employee, product, sale, saledetail, deliveryorder, dashboard, ticket, fiscal, invoice, account, auth)
 ├── entities/         # JPA entities
 ├── enums/            # Enums organized by category (product, user, delivery, invoice, account)
 ├── exceptions/       # Custom exceptions
 ├── repositories/     # Spring Data JPA repositories
 ├── security/         # Security configuration and JWT filters
-├── services/         # Business logic (interface + implementation pattern by domain — includes fiscal, invoice, storage, account)
-├── utils/            # Common utilities (DateTimeUtils, ValidationUtils, SecurityUtils.isAdmin(Authentication))
+├── services/         # Business logic (interface + implementation pattern by domain — includes fiscal, invoice, storage, account, auth)
+├── utils/            # Common utilities (DateTimeUtils, ValidationUtils, SecurityUtils.isAdmin(Authentication), OpaqueTokenUtils)
 └── validation/       # Custom validation annotations and validators
 ```
 
@@ -203,7 +210,8 @@ com.pasadita.api/
 - **Production** (`application-prod.properties`): Uses environment variables (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
   `JWT_SECRET`, `JWT_EXPIRATION`, `CORS_ALLOWED_ORIGINS`, `CSD_CER_PATH`, `CSD_KEY_PATH`, `CSD_PASSWORD`,
   `FACTURAPI_KEY`, `R2_ACCESS_KEY`,
-  `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`, optional `WALK_IN_CUSTOMER_ID` and `EMISOR_*`), Hibernate
+  `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`, optional `WALK_IN_CUSTOMER_ID`, `EMISOR_*`,
+  `REFRESH_TOKEN_DAYS` [60] and `REFRESH_COOKIE_SECURE` [true]), Hibernate
   `ddl-auto=validate`, HikariCP pool (max 10),
   error-detail hardening via `spring.web.error.include-*=never` (Boot 4 key; the old `server.error.*` is ignored)
 - **Facturación (CFDI)**: `facturacion.emisor.*` (rfc, razon-social, regimen-fiscal, codigo-postal; env `EMISOR_RFC`,
@@ -224,7 +232,8 @@ com.pasadita.api/
   credentials, but production (`application-prod.properties`) requires the real env vars
 - **Timezone Strategy**: Database stores all dates in UTC (`serverTimezone=UTC` in production)
 - **Date Conversion**: Use `DateTimeUtils` class for timezone handling:
-    - `DateTimeUtils.nowUtc()` - Get current time in UTC (for saving to DB)
+    - `DateTimeUtils.nowUtc()` - Get current time in UTC (for saving to DB); `nowUtc(Clock)` takes the injected UTC
+      `Clock` bean (`SchedulingConfig`) so time rules can be tested with a fixed clock
     - `DateTimeUtils.nowMexico()` - Get current time in Mexico timezone (for default date range logic)
     - `DateTimeUtils.toMexicoTime(datetime)` - Convert UTC to Mexico time (for API responses)
     - `DateTimeUtils.toUtc(datetime)` - Convert Mexico time to UTC (for user input)
@@ -233,11 +242,106 @@ com.pasadita.api/
 
 - JWT secret comes from `JWT_SECRET`: required in production (no default in `application-prod.properties`); the base
   `application.properties` fallback is a readable dev/test placeholder (valid base64), not a secret
-- Token expiration set to 24 hours (86400000ms)
-- All endpoints require authentication except OPTIONS requests
+- Access token lifetime = `JWT_EXPIRATION` (ms): 24 h (86400000) until step 4 of the refresh-token rollout, then
+  60 min (3600000); sessions persist through the refresh token (`REFRESH_TOKEN_DAYS`, sliding)
+- All endpoints require authentication except OPTIONS requests, `/ws/**` (printer agent) and
+  `POST /api/auth/refresh` / `POST /api/auth/logout` (the refresh cookie is the credential)
 - Admin role required for employee management endpoints
 - Passwords are BCrypt-encoded before storage
 - Employee authentication uses username/password to generate JWT token
+
+### Refresh Tokens (persistent sessions)
+
+Sessions survive closing the window or rebooting the PC/phone: a short access JWT (claims unchanged) plus a rotating
+opaque refresh token in an httpOnly cookie. Same behavior for ADMIN, CAJERO and PEDIDOS.
+
+- **Endpoints**:
+    - `POST /login`: same 6-key body (`token`, `username`, `employeeId`, `authorities`, `message`, `expiresAt`) and
+      `Authorization` header as always, plus `Set-Cookie: refresh_token=…`
+    - `POST /api/auth/refresh` (`AuthController`): public — permitAll, and `JwtValidationFilter.shouldNotFilter` skips
+      `/api/auth/**` so an expired `Bearer` header can't turn it into a 401. Reads the cookie and answers the login
+      body (`message: "Token refreshed"`) + `Authorization` header + rotated cookie
+    - `POST /api/auth/logout`: always `204`; revokes the presented token's family and clears the cookie
+    - Errors: 401 `{"error":"invalid_refresh_token"|"refresh_token_reused","message":"…"}`
+      (`InvalidRefreshTokenException` / its subclass `RefreshTokenReusedException`); an inactive employee gets the
+      login's 401 `{"message":"Login failed","error":"Usuario inactivo"}` (`EmployeeInactiveException`)
+- **Cookie** (`RefreshTokenCookieFactory`): `HttpOnly; SameSite=Lax; Path=/api/auth; Max-Age=REFRESH_TOKEN_DAYS·86400`,
+  `Secure` unless `REFRESH_COOKIE_SECURE=false` (only for plain-http LAN tests; browsers accept Secure cookies from
+  `http://localhost`), no `Domain` (host-only on `api.lapasadita.app`, same site as `lapasadita.app`). Clearing must
+  repeat name, Path, Secure and SameSite with `Max-Age=0`. CSRF stays disabled: Lax cookies aren't sent on cross-site
+  POSTs and only CORS-allowed origins can read the refresh response
+- **Storage** (`refresh_tokens` → `RefreshToken`): only `token_hash` = SHA-256 hex of 256 random bits
+  (`OpaqueTokenUtils`), never the raw value; `family_id` = one login (one device); `replaced_by_id` is set on rotation
+  (it tells a rotated token from one revoked by logout/admin); `employee_id` is `ON DELETE CASCADE`. UTC dates via
+  `DateTimeUtils.nowUtc(clock)`. `token_hash`/`family_id` are `char`, mapped with `columnDefinition` so
+  `ddl-auto=validate` accepts them. Config: `AuthProperties` (`app.auth.refresh-token-days`,
+  `app.auth.refresh-cookie-secure`)
+- **Rotation** (`AuthSessionServiceImpl.refresh`, `@Transactional(isolation = READ_COMMITTED, noRollbackFor =
+  RefreshTokenReusedException.class)`): `findByTokenHashForUpdate` locks only the token row (no join to the employee,
+  so no lock cycle with employee updates). Active, not expired and employee active → a new token in the same family
+  with a sliding `now + REFRESH_TOKEN_DAYS`; the old one gets `revoked_at` + `replaced_by_id`. READ_COMMITTED for the
+  same reason as payments: a request that waited on the lock must see the rotation already committed
+    - Revoked without `replaced_by_id` (logout/admin), or a family with no active token left → `invalid_refresh_token`
+    - Rotated ≤ 30 s ago (`ROTATION_GRACE`) **and** the replay carries the User-Agent of the successor just created
+      (same client) → a **sibling** in the same family (new cookie + access token); the old row stays untouched.
+      Covers two tabs refreshing at once and the phone whose rotation response was lost: it still holds the old token,
+      so an access token alone would make its next refresh a reuse alarm. Comparing with the successor (created
+      seconds ago), not the presented token, keeps a browser update between rotations from looking like another
+      client. Accepted trade-off: a stolen copy replayed inside those 30 s with the same User-Agent gets a sibling
+    - Inside the grace from another User-Agent, or rotated > 30 s ago → reuse
+    - Reuse → `revokeFamily` + `warn` + `RefreshTokenReusedException`. The revocation commits thanks to
+      `noRollbackFor`; never move it to a `REQUIRES_NEW` helper — it would wait on its own caller's `FOR UPDATE` until
+      the lock timeout
+    - Bulk revocations only touch `revoked_at IS NULL`, so a rotation time (the grace clock) is never overwritten
+    - Roles are rebuilt from `employee.position` on every refresh (a role change applies on the next refresh) and the
+      JWT comes from the single `JwtTokenProvider`: the `authorities` claim must stay `[{"authority":"ROLE_X"}]`, the
+      shape `JwtValidationFilter` deserializes
+- **Revocation**: `EmployeeServiceImpl` calls `AuthSessionService.revokeAllSessions` in the same transaction on
+  `changeStatus(active = false)`, `update(active = false)` and `changePassword` (an admin changing their own password
+  logs out their devices too); deleting an employee drops its tokens through the FK cascade. Limitation:
+  `JwtValidationFilter` never reads the database, so an access token already issued lives until its `exp` (24 h today,
+  60 min after step 4); refresh rejects an inactive employee anyway
+- **Cleanup**: `RefreshTokenCleanupJob` (daily 04:00 Mexico) deletes tokens expired or revoked more than 30 days ago;
+  the recent ones stay so a replayed rotated token still trips the reuse alarm
+- **Printer agent unaffected**: it connects to `/ws/printer?stationId=` with no JWT; keep `/ws/**` permitAll. Tickets and
+  the drawer only need the frontend's access token to be valid when it calls the sale endpoints
+- **Frontend contract**:
+    - `withCredentials: true` (fetch `credentials: 'include'`) on **login**, refresh and logout — without it the browser
+      silently drops the cross-origin `Set-Cookie`
+    - Keep the access token in memory (or `sessionStorage`); at startup without one, call refresh; on a 401 from the API,
+      one single-flight refresh and retry once; a 401 from refresh → login screen. Logout calls `POST /api/auth/logout`
+    - iOS Safari may cap the cookie at 7 days when the API's IP differs from the site's; every rotation renews it, so
+      only users idle for a week would see the login
+- **CORS**: `CorsConfig` already answers `Access-Control-Allow-Credentials: true` with exact origins
+  (`CORS_ALLOWED_ORIGINS`) or the dev patterns. Never put `*` in `CORS_ALLOWED_ORIGINS`: Spring rejects it with
+  credentials
+- **Rate limit / client IP (decision)**: no rate limit in the app, and the app reads no client IP (behind Cloudflare →
+  Caddy it only sees Caddy's Docker IP). Login brute force is handled by a Cloudflare rate limiting rule on
+  `POST /login` (Security → WAF → Rate limiting rules; the free plan includes one), where Cloudflare sees the real IP.
+  Refresh needs none (a 256-bit token can't be guessed). If an in-app limiter is ever added: trust `CF-Connecting-IP`
+  only when the VPS firewall admits just Cloudflare's IP ranges (otherwise anyone reaching the origin can forge it);
+  `X-Forwarded-For` as-is is Cloudflare's edge, because Caddy v2 replaces it with its peer unless `trusted_proxies` is
+  configured
+- **Verified against MySQL 8.4** (curl + mysql script, like the payments): 8 parallel refreshes with one cookie → all
+  `200`, one rotation + 7 siblings; replay after 31 s → `401 refresh_token_reused` and the whole family revoked in the
+  database; a replay inside the grace from another User-Agent → reuse; password changes during in-flight refreshes (3 rounds × 4 devices) leave no active token; deleting an
+  employee with linked chains and the cleanup `DELETE` over linked chains run without FK errors; the migration applied
+  twice is idempotent and `ddl-auto=validate` passes on both the fresh `scriptLP.sql` and `main`'s schema + migration
+
+### Rollout oficial (refresh tokens)
+
+0. Check that the VPS compose (`~/apps/lapasadita-api`, not in the repo) passes `JWT_EXPIRATION` to the container
+   (`environment:` or `env_file`) — steps 2 and 4 depend on it. `REFRESH_TOKEN_DAYS` / `REFRESH_COOKIE_SECURE` are
+   optional (defaults 60 / true)
+1. Apply `scripts/migrations/2026-11-refresh-tokens.sql` by hand in Aiven **before** the deploy (prod validates the
+   schema at startup)
+2. Deploy (merge to `main`) with `JWT_EXPIRATION=86400000` explicit in the VPS `.env`. The current frontend doesn't
+   notice: without credentials the browser ignores the cookie, and the unused rows are purged by the cleanup job
+3. Publish the frontend with refresh handling (frontend contract above)
+4. Only then set `JWT_EXPIRATION=3600000` in the VPS `.env` + `docker compose up -d` (recreates the container), and
+   change the default in `application-prod.properties` to `3600000` in a separate PR
+
+Rollback: the table is additive; code without refresh tokens ignores it.
 
 ### Service Layer Pattern
 
@@ -276,7 +380,8 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
 |-----------------------------|--------------------|--------------------------------------------------------------------------------|
 | `EntityNotFoundException`   | 404 NOT_FOUND      | Entity lookup fails (throw from service)                                       |
 | `BusinessRuleException`     | 400 BAD_REQUEST    | Domain rule violation (e.g., cancel already-delivered order)                   |
-| `EmployeeInactiveException` | 401 (auth failure) | Extends `AuthenticationException`; thrown during login if employee is inactive |
+| `EmployeeInactiveException` | 401 UNAUTHORIZED   | Extends `AuthenticationException`; login of an inactive employee (login filter) and refresh of one (handler, same `{"message":"Login failed","error":…}` body) |
+| `InvalidRefreshTokenException` / `RefreshTokenReusedException` | 401 UNAUTHORIZED | Refresh cookie missing/unknown/expired/revoked, or rotated token replayed after the grace; body `{"error": code, "message": …}` |
 | `ConstraintViolationException` (`jakarta.validation`) | 400 BAD_REQUEST | Entity Bean Validation re-run by Hibernate at persist time; body is `{property: message}` like `ValidationUtils` |
 | `AccessDeniedException` (Spring Security) | 403 FORBIDDEN | `@PreAuthorize` denial (`AuthorizationDeniedException`), thrown inside the controller call — without this handler the catch-all made it a 500 |
 | `Exception` (catch-all)     | 500                | Logged via SLF4J, returns generic message                                      |
@@ -326,10 +431,23 @@ Centralized via `GlobalExceptionHandler` (`@RestControllerAdvice`):
   `SaleControllerTest` (open-drawer `503` when the station is offline, `400` without `stationId`, `200` when delivered),
   `JwtAuthenticationFilterTest` (login body binding with Boot's `JsonMapper` built from the real
   `application.properties` via `ApplicationContextRunner` — fails if `use-jackson2-defaults` is dropped; malformed
-  body stays a `401`; `FactorGrantedAuthority` never reaches the JWT or the login body)
+  body stays a `401`; the login answers exactly the same 6-key body, `Authorization` header and JWT claims as before,
+  plus the refresh cookie with every attribute — built end to end with the real `AuthSessionServiceImpl`;
+  `FactorGrantedAuthority` never reaches the JWT or the login body),
+  `AuthSessionServiceImplTest` (over an in-memory token table and a movable `Clock`: login stores only the hash of a
+  new family, sliding rotation, role/username taken on refresh, missing/unknown/expired/logout-revoked tokens invalid
+  without writes, reuse after the grace revokes the family, two tabs and the lost-response phone retry get siblings,
+  another User-Agent inside the grace is reuse,
+  grace never resumes an ended session, inactive employee in both paths, logout revokes the family, the
+  `READ_COMMITTED` + `noRollbackFor` guard), `EmployeeServiceImplTest` (revocation on deactivation via `changeStatus`
+  and `update`, and on password change), `JwtValidationFilterTest` (an expired `Bearer` doesn't block
+  `/api/auth/**` but still 401s elsewhere; a refreshed token authenticates with its role), `AuthControllerTest`
+  (standalone `MockMvc` + the advice: refresh cookie/body, the three 401 bodies, logout `204` with the clearing
+  cookie), `RefreshTokenCleanupJobTest`
 - Validation and error-mapping tests (no Spring Boot context): `SaleDetailValidationTest` (entity `quantity` bounds as Hibernate
   checks them at persist time) and `GlobalExceptionHandlerTest` (`ConstraintViolationException` → `400`; an
-  `AuthorizationDeniedException` → `403` through a standalone `MockMvc`, so the advice's handler resolution is exercised)
+  `AuthorizationDeniedException` → `403` through a standalone `MockMvc`, so the advice's handler resolution is exercised;
+  refresh-token codes and inactive employee → `401`)
 - Role tests: `CustomerEndpointsAuthorizationTest` runs `CustomerAccountController` and `CustomerController` behind
   real method security (`@SpringJUnitConfig` + `@EnableMethodSecurity`, mocked services, no Boot context or
   database): the debts list and the customer list for the three roles, credit limit and customer writes denied to

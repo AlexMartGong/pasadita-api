@@ -59,6 +59,10 @@ services:
       # Must be valid base64 (TokenJwtConfig base64-decodes it)
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION: ${JWT_EXPIRATION}
+      # Refresh tokens. ":-" defaults: an older .env without these would otherwise
+      # pass an empty string and break the startup binding
+      REFRESH_TOKEN_DAYS: ${REFRESH_TOKEN_DAYS:-60}
+      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-true}
       CSD_CER_PATH: ${CSD_CER_PATH}
       CSD_KEY_PATH: ${CSD_KEY_PATH}
       CSD_PASSWORD: ${CSD_PASSWORD}

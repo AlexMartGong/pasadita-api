@@ -3,7 +3,8 @@ package com.pasadita.api.services.employee;
 import com.pasadita.api.dto.employee.*;
 import com.pasadita.api.entities.Employee;
 import com.pasadita.api.repositories.EmployeeRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.pasadita.api.services.auth.AuthSessionService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,16 +14,13 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class EmployeeServiceImpl implements EmployeeService {
 
-    @Autowired
-    private EmployeeRepository employeeRepository;
-
-    @Autowired
-    private PasswordEncoder passwordEncoder;
-
-    @Autowired
-    private EmployeeMapper employeeMapper;
+    private final EmployeeRepository employeeRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final EmployeeMapper employeeMapper;
+    private final AuthSessionService authSessionService;
 
     @Override
     @Transactional(readOnly = true)
@@ -56,6 +54,7 @@ public class EmployeeServiceImpl implements EmployeeService {
                 .map(existingEmployee -> {
                     employeeMapper.updateEntityFromDto(existingEmployee, employeeDto);
                     Employee savedEmployee = employeeRepository.save(existingEmployee);
+                    revokeSessionsIfInactive(savedEmployee);
                     return employeeMapper.toResponseDto(savedEmployee);
                 });
     }
@@ -66,6 +65,7 @@ public class EmployeeServiceImpl implements EmployeeService {
         return employeeRepository.existsByUsername(username);
     }
 
+    // The employee's refresh tokens go with it: refresh_tokens.employee_id is ON DELETE CASCADE
     @Override
     @Transactional
     public void deleteById(Long id) {
@@ -96,6 +96,8 @@ public class EmployeeServiceImpl implements EmployeeService {
                 .map(existingEmployee -> {
                     existingEmployee.setPassword(passwordEncoder.encode(passwordDto.getPassword()));
                     Employee savedEmployee = employeeRepository.save(existingEmployee);
+                    // A new password closes every open session (all devices) once their access token expires
+                    authSessionService.revokeAllSessions(savedEmployee.getId());
                     return employeeMapper.toResponseDto(savedEmployee);
                 });
     }
@@ -107,8 +109,17 @@ public class EmployeeServiceImpl implements EmployeeService {
                 .map(existingEmployee -> {
                     existingEmployee.setActive(statusDto.isActive());
                     Employee savedEmployee = employeeRepository.save(existingEmployee);
+                    revokeSessionsIfInactive(savedEmployee);
                     return employeeMapper.toResponseDto(savedEmployee);
                 });
+    }
+
+    // Same transaction as the status change. The access token in hand stays valid until its exp (JwtValidationFilter
+    // never reads the database); refresh rejects an inactive employee anyway
+    private void revokeSessionsIfInactive(Employee employee) {
+        if (!employee.isActive()) {
+            authSessionService.revokeAllSessions(employee.getId());
+        }
     }
 
 }

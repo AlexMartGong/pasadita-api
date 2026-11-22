@@ -53,6 +53,28 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.error").value("You don't have permission to perform this action"));
     }
 
+    @Test
+    void invalidAndReusedRefreshTokensAre401WithTheirCode() {
+        ResponseEntity<Map<String, String>> invalid = handler.handleInvalidRefreshToken(new InvalidRefreshTokenException());
+        ResponseEntity<Map<String, String>> reused = handler.handleInvalidRefreshToken(new RefreshTokenReusedException());
+
+        assertThat(invalid.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(invalid.getBody()).containsEntry("error", "invalid_refresh_token").containsKey("message");
+        assertThat(reused.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(reused.getBody()).containsEntry("error", "refresh_token_reused").containsKey("message");
+    }
+
+    // Same body JwtAuthenticationFilter answers for a login of an inactive employee
+    @Test
+    void inactiveEmployeeIs401WithTheLoginFailureBody() {
+        ResponseEntity<Map<String, String>> response =
+                handler.handleEmployeeInactive(new EmployeeInactiveException("Usuario inactivo"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(response.getBody())
+                .containsExactlyInAnyOrderEntriesOf(Map.of("message", "Login failed", "error", "Usuario inactivo"));
+    }
+
     @RestController
     static class DeniedController {
 

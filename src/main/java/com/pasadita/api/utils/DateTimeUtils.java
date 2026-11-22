@@ -1,5 +1,6 @@
 package com.pasadita.api.utils;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -35,6 +36,11 @@ public final class DateTimeUtils {
 
     public static LocalDateTime nowUtc() {
         return LocalDateTime.now(UTC_ZONE);
+    }
+
+    // Same as nowUtc() but from an injected Clock, so time-dependent rules can be tested with a fixed one
+    public static LocalDateTime nowUtc(Clock clock) {
+        return LocalDateTime.ofInstant(clock.instant(), UTC_ZONE);
     }
 
     public static LocalDateTime nowMexico() {
