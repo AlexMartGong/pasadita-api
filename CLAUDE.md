@@ -343,6 +343,18 @@ opaque refresh token in an httpOnly cookie. Same behavior for ADMIN, CAJERO and 
 
 Rollback: the table is additive; code without refresh tokens ignores it.
 
+### Fuera de alcance / pendientes de seguridad
+
+- **`/ws/printer` is not authenticated** (separate piece of work): `/ws/**` is permitAll and the handshake only reads
+  `?stationId=` (`setAllowedOrigins("*")`), so anyone who knows a `stationId` can impersonate that station. Under the
+  reconnection rule (see WebSocket Integration) the impostor's connection replaces the real agent's session: the
+  impostor receives the tickets, which carry customer data (`TicketResponseDto`), and the `OPEN_DRAWER` commands, and
+  the real agent is disconnected. Fixing it needs a per-station credential checked at the handshake plus a matching
+  change in `pos-printer-agent`; the refresh-token work doesn't touch it
+- **Accepted residual risk (refresh tokens)**: a stolen refresh token replayed inside the 30 s grace window with the
+  User-Agent of the legitimate client gets a sibling (see Refresh Tokens). Accepted as documented; DPoP-style
+  device-key binding is not planned
+
 ### Service Layer Pattern
 
 Services follow a consistent interface/implementation pattern:
